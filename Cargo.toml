@@ -1,0 +1,14 @@
+[package]
+name = "rusty_bench"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = "*"
+egui_extras = "*"
+env_logger = "*"
+rfd = "*"
+anyhow = "*"
+flate2 = "*"
+log = "*"
+tar = "*"
