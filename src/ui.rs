@@ -12,6 +12,7 @@ pub struct RustyBench {
     pub picked_file: PathBuf,
     pub files: Vec<Teddyfile>,
     pub selection: Option<usize>,
+    pub show_ogg_popup: bool,
 }
 
 impl Default for RustyBench {
@@ -21,6 +22,7 @@ impl Default for RustyBench {
             picked_file: Default::default(),
             files: vec![],
             selection: None,
+            show_ogg_popup: false,
         }
     }
 }
@@ -98,6 +100,8 @@ impl eframe::App for RustyBench {
                         });
                     });
             });
+        });
+        egui::TopBottomPanel::bottom("Bootom Panel").show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
                 if ui
                     .add_sized(
@@ -127,7 +131,7 @@ impl eframe::App for RustyBench {
                         if ext == ".ogg" {
                             convert_from_ogg(&self.picked_file)
                         } else {
-                            todo!("Only .ogg files are allowed");
+                            self.show_ogg_popup = true;
                         }
                     } else {
                         // TODO tell the user a file without extension is strange in this context
@@ -139,12 +143,9 @@ impl eframe::App for RustyBench {
                         egui::Button::new("Extract to .ogg").fill(Color32::BLUE),
                     )
                     .clicked()
+                    && self.selection.is_some()
                 {
-                    if self.selection.is_some() {
-                        extract_to_ogg(&self.files[self.selection.unwrap()])
-                    } else {
-                        todo!("No file selected!");
-                    }
+                    extract_to_ogg(&self.files[self.selection.unwrap()])
                 }
                 if ui
                     .add_sized(
@@ -152,14 +153,23 @@ impl eframe::App for RustyBench {
                         egui::Button::new("Change tag ID").fill(Color32::BLUE),
                     )
                     .clicked()
+                    && self.selection.is_some()
                 {
-                    if self.selection.is_some() {
-                        extract_to_ogg(&self.files[self.selection.unwrap()])
-                    } else {
-                        todo!("No file selected!");
-                    }
+                    extract_to_ogg(&self.files[self.selection.unwrap()])
                 }
             });
         });
+        if self.show_ogg_popup {
+            egui::Window::new("Only .ogg files are supported.")
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        if ui.button("Ok").clicked() {
+                            self.show_ogg_popup = false;
+                        }
+                    });
+                });
+        }
     }
 }
