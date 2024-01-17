@@ -5,7 +5,7 @@ use eframe::{
 use egui_extras::{Column, TableBuilder};
 use std::path::PathBuf;
 
-use crate::{convert_from_ogg, extract_to_ogg, populate_folder, Teddyfile};
+use crate::{convert_from_ogg, extract_to_ogg, populate_folder, Teddyfile, change_tag_id};
 
 pub struct RustyBench {
     pub picked_path: PathBuf,
@@ -155,7 +155,7 @@ impl eframe::App for RustyBench {
                     .clicked()
                     && self.selection.is_some()
                 {
-                    extract_to_ogg(&self.files[self.selection.unwrap()])
+                    change_tag_id(&self.files[self.selection.unwrap()])
                 }
             });
         });

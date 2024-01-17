@@ -1,0 +1,17 @@
+{
+    "configurations": [
+        {
+            "type": "cppdbg",
+            "request": "launch",
+            "name": "Debugtest run",
+            "MIMode": "gdb",
+            "miDebuggerPath": "rust-gdb",
+            "environment": [],
+            "program": "${workspaceFolder}/target/debug/rustyBench",
+            "cwd": "${workspaceFolder}",
+            "console": "external",
+            "dap-compilation": "cargo build",
+            "dap-compilation-dir": "${workspaceFolder}",
+        }
+    ]
+}
