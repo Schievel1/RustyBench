@@ -124,11 +124,12 @@ impl eframe::App for RustyBench {
                     )
                     .clicked()
                 {
-                    if let Some(path) = rfd::FileDialog::new().pick_file() {
+                    if let Some(path) = rfd::FileDialog::new().add_filter("ogg", &["ogg"]).pick_file() {
                         self.picked_file = path;
                     }
                     if let Some(ext) = self.picked_file.extension() {
-                        if ext == ".ogg" {
+                        dbg!(&ext);
+                        if ext.to_string_lossy().ends_with("ogg") {
                             convert_from_ogg(&self.picked_file)
                         } else {
                             self.show_ogg_popup = true;
@@ -145,7 +146,9 @@ impl eframe::App for RustyBench {
                     .clicked()
                     && self.selection.is_some()
                 {
-                    extract_to_ogg(&self.files[self.selection.unwrap()])
+                    if let Some(path) = rfd::FileDialog::new().save_file() {
+                        extract_to_ogg(&self.files[self.selection.unwrap()], &path);
+                    }
                 }
                 if ui
                     .add_sized(

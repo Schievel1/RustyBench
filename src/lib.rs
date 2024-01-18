@@ -162,8 +162,26 @@ pub fn convert_from_ogg(path: &Path) {
     todo!("convert an ogg to teddybox file");
 }
 
-pub fn extract_to_ogg(file: &Teddyfile) {
-    todo!("convert a teddybox file to ogg");
+fn read_audio_from_file(file: &Teddyfile) -> Result<Vec<u8>> {
+    let f = File::open(&file.path)?;
+    let mut reader = BufReader::new(f);
+    let mut buf: Vec<u8> = Vec::new();
+
+    reader.read_to_end(&mut buf)?;
+    let header_len = read_header_len(&buf);
+
+    Ok(buf[header_len + 4..].to_vec())
+}
+
+pub fn extract_to_ogg(file: &Teddyfile, dest: &Path) {
+    if !file.is_valid {
+        log::error!("file {} has an invalid header", file.path.display());
+    }
+    let audio = read_audio_from_file(file).unwrap();
+    fs::write(
+        dest.join(dest).with_extension("ogg"),
+        audio,
+    ).unwrap();
 }
 
 pub fn change_tag_id(file: &Teddyfile) {
