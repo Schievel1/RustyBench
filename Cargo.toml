@@ -16,6 +16,7 @@ prost = "0.6"
 # Only necessary if using Protobuf well-known types:
 prost-types = "0.6"
 open = "*"
+sha1 = "*"
 
 [build-dependencies]
 prost-build = { version = "0.6" }

@@ -5,7 +5,7 @@ use eframe::{
 use egui_extras::{Column, TableBuilder};
 use std::path::PathBuf;
 
-use crate::{convert_from_ogg, extract_to_ogg, populate_folder, Teddyfile, change_tag_id, extract_all, play_file, add_note};
+use crate::{convert_from_ogg, extract_to_ogg, populate_table, Teddyfile, change_tag_id, extract_all, play_file, add_note};
 
 pub struct RustyBench {
     pub picked_path: PathBuf,
@@ -55,7 +55,7 @@ impl eframe::App for RustyBench {
                         }
                         self.files.clear();
                         self.selection = None;
-                        populate_folder(&self.picked_path, &mut self.files)
+                        populate_table(&self.picked_path, &mut self.files)
                     }
                 });
             });
@@ -119,7 +119,7 @@ impl eframe::App for RustyBench {
                     }
                     self.files.clear();
                     self.selection = None;
-                    populate_folder(&self.picked_path, &mut self.files)
+                    populate_table(&self.picked_path, &mut self.files)
                 }
                 if ui
                     .add_sized(
@@ -127,14 +127,14 @@ impl eframe::App for RustyBench {
                         egui::Button::new("Add .ogg").fill(Color32::BLUE),
                     )
                     .clicked()
+                    && self.picked_path.exists()
                 {
                     if let Some(path) = rfd::FileDialog::new().add_filter("ogg", &["ogg"]).pick_file() {
                         self.picked_file = path;
                     }
                     if let Some(ext) = self.picked_file.extension() {
-                        dbg!(&ext);
                         if ext.to_string_lossy().ends_with("ogg") {
-                            convert_from_ogg(&self.picked_file)
+                            convert_from_ogg(&self.picked_path, &self.picked_file, "E0040350129C3DA2")
                         } else {
                             self.show_ogg_popup = true;
                         }

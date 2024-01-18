@@ -2405,6 +2405,7 @@ dependencies = [
  "prost-build",
  "prost-types",
  "rfd",
+ "sha1",
  "tar",
 ]
 
