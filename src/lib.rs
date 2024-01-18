@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::env;
 use std::path::{Path, PathBuf};
 
 pub mod ui;
@@ -190,4 +191,15 @@ pub fn change_tag_id(file: &Teddyfile) {
 
 pub fn add_note(file: &Teddyfile) {
     todo!("add a note to a file");
+}
+
+pub fn extract_all(files: &Vec<Teddyfile>) {
+    todo!("extract all files to CONTENT folder");
+}
+
+pub fn play_file(file: &Teddyfile) {
+    let dir = env::temp_dir();
+    let path = dir.join(file.path.file_name().unwrap()).with_extension("ogg");
+    extract_to_ogg(file, &path);
+    open::that(path).unwrap();
 }
