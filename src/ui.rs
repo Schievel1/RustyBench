@@ -5,7 +5,7 @@ use eframe::{
 use egui_extras::{Column, TableBuilder};
 use std::path::PathBuf;
 
-use crate::{convert_from_ogg, extract_to_ogg, populate_folder, Teddyfile, change_tag_id};
+use crate::{convert_from_ogg, extract_to_ogg, populate_folder, Teddyfile, change_tag_id, extract_all, play_file, add_note};
 
 pub struct RustyBench {
     pub picked_path: PathBuf,
@@ -49,7 +49,7 @@ impl eframe::App for RustyBench {
                     if ui.button("Quit").clicked() {
                         ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                     }
-                    if ui.button("Choose folder...").clicked() {
+                    if ui.button("Choose CONTENT folder...").clicked() {
                         if let Some(path) = rfd::FileDialog::new().pick_folder() {
                             self.picked_path = path;
                         }
@@ -74,7 +74,8 @@ impl eframe::App for RustyBench {
                     ui.label("Files");
                 });
                 TableBuilder::new(ui)
-                    .column(Column::auto().resizable(true))
+                    .column(Column::auto().at_least(300.0).resizable(true))
+                    .column(Column::auto().at_least(150.0).resizable(true))
                     .column(Column::remainder())
                     .sense(egui::Sense::click())
                     .header(20.0, |mut header| {
@@ -83,6 +84,9 @@ impl eframe::App for RustyBench {
                         });
                         header.col(|ui| {
                             ui.heading("Tag ID");
+                        });
+                        header.col(|ui| {
+                            ui.heading("Note");
                         });
                     })
                     .body(|body| {
@@ -106,7 +110,7 @@ impl eframe::App for RustyBench {
                 if ui
                     .add_sized(
                         [120., 40.],
-                        egui::Button::new("Choose Folder").fill(Color32::BLUE),
+                        egui::Button::new("Choose folder\nCONTENT").fill(Color32::BLUE),
                     )
                     .clicked()
                 {
@@ -141,6 +145,16 @@ impl eframe::App for RustyBench {
                 if ui
                     .add_sized(
                         [120., 40.],
+                        egui::Button::new("Play file").fill(Color32::RED),
+                    )
+                    .clicked()
+                    && self.selection.is_some()
+                {
+                    play_file(&self.files[self.selection.unwrap()]);
+                }
+                if ui
+                    .add_sized(
+                        [120., 40.],
                         egui::Button::new("Extract to .ogg").fill(Color32::BLUE),
                     )
                     .clicked()
@@ -153,12 +167,32 @@ impl eframe::App for RustyBench {
                 if ui
                     .add_sized(
                         [120., 40.],
+                        egui::Button::new("Extract all\nto CONTENT").fill(Color32::BLUE),
+                    )
+                    .clicked()
+                    && self.selection.is_some()
+                {
+                    extract_all(&self.files);
+                }
+                if ui
+                    .add_sized(
+                        [120., 40.],
                         egui::Button::new("Change tag ID").fill(Color32::BLUE),
                     )
                     .clicked()
                     && self.selection.is_some()
                 {
                     change_tag_id(&self.files[self.selection.unwrap()])
+                }
+                if ui
+                    .add_sized(
+                        [120., 40.],
+                        egui::Button::new("Add note").fill(Color32::BLUE),
+                    )
+                    .clicked()
+                    && self.selection.is_some()
+                {
+                    add_note(&self.files[self.selection.unwrap()])
                 }
             });
         });

@@ -187,3 +187,7 @@ pub fn extract_to_ogg(file: &Teddyfile, dest: &Path) {
 pub fn change_tag_id(file: &Teddyfile) {
     todo!("change the tag id of a file");
 }
+
+pub fn add_note(file: &Teddyfile) {
+    todo!("add a note to a file");
+}
