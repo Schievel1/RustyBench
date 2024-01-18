@@ -193,8 +193,11 @@ pub fn add_note(file: &Teddyfile) {
     todo!("add a note to a file");
 }
 
-pub fn extract_all(files: &Vec<Teddyfile>) {
-    todo!("extract all files to CONTENT folder");
+pub fn extract_all(files: &[Teddyfile], path: &Path) {
+    for file in files {
+        dbg!(&file.path);
+        extract_to_ogg(file, &path.join(&file.tag));
+    }
 }
 
 pub fn play_file(file: &Teddyfile) {

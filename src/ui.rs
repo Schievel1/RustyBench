@@ -167,12 +167,13 @@ impl eframe::App for RustyBench {
                 if ui
                     .add_sized(
                         [120., 40.],
-                        egui::Button::new("Extract all\nto CONTENT").fill(Color32::BLUE),
+                        egui::Button::new("Extract all").fill(Color32::BLUE),
                     )
                     .clicked()
-                    && self.selection.is_some()
                 {
-                    extract_all(&self.files);
+                    if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                        extract_all(&self.files, &path);
+                    }
                 }
                 if ui
                     .add_sized(
