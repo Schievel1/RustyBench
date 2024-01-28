@@ -1,18 +1,26 @@
+use anyhow::anyhow;
+use anyhow::Result;
 use eframe::{
     egui::{self, RichText},
     epaint::Color32,
 };
 use egui_extras::{Column, TableBuilder};
-use std::path::PathBuf;
+use egui_modal::Modal;
+use std::{fs, path::PathBuf};
 
-use crate::{convert_from_ogg, extract_to_ogg, populate_table, Teddyfile, change_tag_id, extract_all, play_file, add_note};
+use crate::{
+    add_audio_file, add_note, change_tag_id, extract_all, extract_to_ogg, play_file,
+    populate_table, Teddyfile,
+};
 
 pub struct RustyBench {
     pub picked_path: PathBuf,
     pub picked_file: PathBuf,
     pub files: Vec<Teddyfile>,
     pub selection: Option<usize>,
-    pub show_ogg_popup: bool,
+    pub show_id_popup: bool,
+    pub tag_id: String,
+    pub tag_id_valid: bool,
 }
 
 impl Default for RustyBench {
@@ -22,7 +30,9 @@ impl Default for RustyBench {
             picked_file: Default::default(),
             files: vec![],
             selection: None,
-            show_ogg_popup: false,
+            show_id_popup: false,
+            tag_id: Default::default(),
+            tag_id_valid: false,
         }
     }
 }
@@ -43,7 +53,7 @@ impl RustyBench {
 impl eframe::App for RustyBench {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            // The top panel is often a good place for a menu bar:
+            ui.set_enabled(!self.show_id_popup);
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Quit").clicked() {
@@ -62,6 +72,7 @@ impl eframe::App for RustyBench {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            ui.set_enabled(!self.show_id_popup);
             ui.horizontal(|ui| {
                 ui.label("Folder: ");
                 ui.add(
@@ -105,7 +116,8 @@ impl eframe::App for RustyBench {
                     });
             });
         });
-        egui::TopBottomPanel::bottom("Bootom Panel").show(ctx, |ui| {
+        egui::TopBottomPanel::bottom("Botom Panel").show(ctx, |ui| {
+            ui.set_enabled(!self.show_id_popup);
             ui.horizontal_centered(|ui| {
                 if ui
                     .add_sized(
@@ -124,23 +136,34 @@ impl eframe::App for RustyBench {
                 if ui
                     .add_sized(
                         [120., 40.],
-                        egui::Button::new("Add .ogg").fill(Color32::BLUE),
+                        egui::Button::new("Add audio file").fill(Color32::BLUE),
                     )
                     .clicked()
                     && self.picked_path.exists()
                 {
-                    if let Some(path) = rfd::FileDialog::new().add_filter("ogg", &["ogg"]).pick_file() {
+                    if let Some(path) = rfd::FileDialog::new().pick_file() {
                         self.picked_file = path;
+                        // self.show_id_popup = true;
+                        // TODO ask for tag ID in menu
+                        self.show_id_popup = true;
                     }
-                    if let Some(ext) = self.picked_file.extension() {
-                        if ext.to_string_lossy().ends_with("ogg") {
-                            convert_from_ogg(&self.picked_path, &self.picked_file, "E0040350129C3DA2")
-                        } else {
-                            self.show_ogg_popup = true;
-                        }
-                    } else {
-                        // TODO tell the user a file without extension is strange in this context
+                }
+                if ui
+                    .add_sized(
+                        [120., 40.],
+                        egui::Button::new("Delete file").fill(Color32::RED),
+                    )
+                    .clicked()
+                    && self.selection.is_some()
+                {
+                    let path = self.files[self.selection.unwrap()].path.clone();
+                    let parent = path.parent().unwrap();
+                    fs::remove_file(&path).unwrap();
+                    if parent.read_dir().unwrap().next().is_none() {
+                        fs::remove_dir(parent).unwrap();
                     }
+                    self.files.clear();
+                    populate_table(&self.picked_path, &mut self.files)
                 }
                 if ui
                     .add_sized(
@@ -197,17 +220,56 @@ impl eframe::App for RustyBench {
                 }
             });
         });
-        if self.show_ogg_popup {
-            egui::Window::new("Only .ogg files are supported.")
+        if self.show_id_popup {
+            egui::Window::new("Please provide a tag ID")
                 .collapsible(false)
                 .resizable(false)
                 .show(ctx, |ui| {
+                    ui.label("tag ID: ");
+                    let text_edit = egui::TextEdit::singleline(&mut self.tag_id);
+                    let response = ui.add(text_edit);
+                    if response.changed() {
+                        // TODO color the box depending on the validity of the tag ID
+                    }
                     ui.horizontal(|ui| {
                         if ui.button("Ok").clicked() {
-                            self.show_ogg_popup = false;
+                            self.show_id_popup = false;
+                            self.tag_id_valid = true;
                         }
                     });
                 });
         }
+        if self.tag_id_valid {
+            println!("tag ID is valid");
+            self.tag_id_valid = false;
+            add_audio_file(&self.picked_path, &self.picked_file, &self.tag_id);
+            self.files.clear();
+            populate_table(&self.picked_path, &mut self.files)
+        }
     }
+}
+
+fn show_id_popup(ctx: &egui::Context) -> Result<String> {
+    let mut tag_id = String::new();
+    let mut show = true;
+    while show {
+        egui::Window::new("Please provide a tag ID")
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label("tag ID: ");
+                let text_edit = egui::TextEdit::singleline(&mut tag_id);
+                let response = ui.add(text_edit);
+                if response.changed() {
+                    // TODO color the box depending on the validity of the tag ID
+                }
+                ui.horizontal(|ui| {
+                    if ui.button("Ok").clicked() {
+                        show = false
+                    }
+                });
+            });
+    }
+    // TODO check if tag_id is valid
+    Ok(tag_id)
 }

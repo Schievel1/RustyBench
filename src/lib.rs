@@ -1,10 +1,24 @@
 use anyhow::Result;
-use sha1::{Digest, Sha1};
+use log::{error, info};
+use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
+use symphonia::core::formats::FormatOptions;
+use symphonia::core::io::MediaSourceStream;
+use symphonia::core::meta::MetadataOptions;
+use symphonia::core::probe::Hint;
+use toniefile::Toniefile;
 use std::env;
+use symphonia::core::errors::Error;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+use prost::Message;
+use std::fs::{self, DirEntry, File};
+use std::io::{BufReader, Read};
+use std::io::Cursor;
+
+use crate::resampler::Resampler;
 
 pub mod ui;
+pub mod resampler;
 
 pub struct Teddyfile {
     path: PathBuf,
@@ -38,13 +52,10 @@ impl Teddyfile {
     }
 }
 
-use prost::Message;
-use std::fs::{self, DirEntry, File};
-use std::io::{BufReader, Read};
-use std::io::{BufWriter, Cursor, Write};
 pub mod tonie {
     include!(concat!(env!("OUT_DIR"), "/tonie.rs"));
 }
+
 fn deserialize_header(len: usize, buf: &[u8]) -> Result<tonie::TonieHeader, prost::DecodeError> {
     if len + 4 > buf.len() {
         return Err(prost::DecodeError::new(
@@ -54,75 +65,116 @@ fn deserialize_header(len: usize, buf: &[u8]) -> Result<tonie::TonieHeader, pros
 
     tonie::TonieHeader::decode(&mut Cursor::new(buf[4..len + 4].to_vec()))
 }
-fn serialize_header(header: &tonie::TonieHeader) -> Vec<u8> {
-    let mut buf = Vec::new();
-    buf.reserve(header.encoded_len());
 
-    header.encode(&mut buf).unwrap();
-    buf
-}
-pub fn create_tonie_header(audio: &[u8], pad_len: usize) -> tonie::TonieHeader {
-    let mut hasher = Sha1::new();
-    hasher.update(audio);
-    let hash = hasher.finalize();
-    let start = SystemTime::now();
-    let timestamp = (start
-        .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards")
-        .as_secs() as u32) - 0x1000;
-    // debug
-    // let timestamp = 0x15a45007;
-    // let data_length = 0xb3198f;
-
-    tonie::TonieHeader {
-        data_hash: hash.to_vec(),
-        data_length: audio.len() as u32,
-        timestamp,
-        chapter_pages: vec![0],
-        padding: vec![0; pad_len],
-    }
-}
-pub fn convert_from_ogg(dest: &Path, path: &Path, tag: &str) {
+pub fn add_audio_file(dest: &Path, path: &Path, tag: &str) {
     if tag.len() != 16 {
-        log::error!("error: tag must be 16 characters long");
+        error!("error: tag must be 16 characters long");
         return;
     }
-
-    // TODO this is some example code when we want to read different audio files and then convert them to opus
-    // let f_i = File::open(path).unwrap();
-    // let mut reader = BufReader::new(f_i);
-    // let mut audio = vec![];
-    // let _ = reader.read_to_end(&mut audio);
-    // let (raw, _header) = ogg_opus::decode::<_,16000>(Cursor::new(audio)).unwrap();
-    // let mut opus = ogg_opus::encode::<16000, 1>(&raw).unwrap();
-    let f = File::open(path).unwrap();
-    let mut reader = BufReader::new(f);
-    let mut audio = vec![];
-    let _ = reader.read_to_end(&mut audio);
-
-    // HACK: to calculate the heading (the complete header must be 0xffc in size), we add a padding of 0x100
-    let header = create_tonie_header(&audio, 0x100);
-    // then serialize and take its length
-    let tmp_header_len = serialize_header(&header).len();
-    // then create the header again with the correct padding
-    let header = create_tonie_header(&audio, 0xffc - tmp_header_len + 0x100);
-
-    println!("{:x?}", &header);
-
     let (filename, dirname) = tag.split_at(8);
-    // dbg!(&filename);
-    // dbg!(&dirname);
+    dbg!(&filename);
+    dbg!(&dirname);
     let dest = dest.join(rotate_bytewise(dirname));
     let _ = fs::create_dir(&dest);
+    let destfile = File::create(dest.join(rotate_bytewise(filename))).unwrap();
 
-    let mut outbuf = vec![0, 0, 0x0f, 0xfc];
-    outbuf.append(&mut serialize_header(&header));
-    outbuf.resize(0x1000, 0);
-    outbuf.append(&mut audio);
+    let src = File::open(path).unwrap();
+    // Create the media source stream.
+    let mss = MediaSourceStream::new(Box::new(src), Default::default());
 
-    let outfile = File::create(dest.join(rotate_bytewise(filename))).unwrap();
-    let mut writer = BufWriter::new(outfile);
-    let _ = writer.write_all(&outbuf);
+    // if the input file has an extension, use it as a hint for the media format.
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension() {
+        if let Some(ext) = ext.to_str() {
+            hint.with_extension(ext);
+        }
+    }
+
+    let meta_opts: MetadataOptions = Default::default();
+    let fmt_opts: FormatOptions = Default::default();
+    // Probe the media source.
+    let probed = symphonia::default::get_probe().format(&hint, mss, &fmt_opts, &meta_opts).unwrap();
+
+    // Get the instantiated format reader.
+    let mut format = probed.format;
+    let track = format
+        .tracks()
+        .iter()
+        .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+        .unwrap();
+        // .ok_or(anyhow::anyhow!("No supported audio track found"));
+
+    // Create a decoder for the track.
+    let dec_opts: DecoderOptions = Default::default();
+    let mut decoder = symphonia::default::get_codecs().make(&track.codec_params, &dec_opts).unwrap();
+
+    // Store the track identifier, it will be used to filter packets.
+    let track_id = track.id;
+
+    // create a Toniefile to write to later
+    let mut toniefile = Toniefile::new_simple(destfile).unwrap();
+
+    // create a resampler to convert to 48kHz
+    let mut resampler: Option<Resampler<i16>> = None;
+
+    let input_sample_rate = track.codec_params.sample_rate.unwrap_or_default();
+    let input_channels = track.codec_params.channels.unwrap_or_default().count(); //TODO
+    let tracklen = track.codec_params.n_frames.unwrap_or_default();
+
+    // print some file info
+    info!(
+        "Input file: {} Hz, {} channels",
+        input_sample_rate, input_channels,
+    );
+
+    info!("Track length: {} frames", tracklen);
+
+    while let Ok(packet) = format.next_packet() {
+        let progress = packet.ts * 100 / tracklen;
+        info!("Progress: {}%", progress);
+        // Consume any new metadata that has been read since the last packet.
+        while !format.metadata().is_latest() {
+            format.metadata().pop();
+        }
+
+        // If the packet does not belong to the selected track, skip over it.
+        if packet.track_id() != track_id {
+            continue;
+        }
+
+        // Decode the packet into audio samples.
+        match decoder.decode(&packet) {
+            Ok(decoded) => {
+                // The packet was successfully decoded, process the audio samples.
+                if resampler.is_none() {
+                    resampler = Some(Resampler::new(
+                        *decoded.spec(),
+                        48000,
+                        decoded.capacity() as u64 / 2,
+                    ));
+                }
+                if let Some(resampled) = resampler.as_mut().unwrap().resample(decoded.clone()) {
+                    toniefile.encode(resampled).unwrap();
+                }
+            }
+            Err(Error::IoError(_)) => {
+                // The packet failed to decode due to an IO error, skip the packet.
+                error!("IO error");
+                continue;
+            }
+            Err(Error::DecodeError(_)) => {
+                // The packet failed to decode due to invalid data, skip the packet.
+                error!("Decode error");
+                continue;
+            }
+            Err(err) => {
+                // An unrecoverable error occured, halt decoding.
+                panic!("{}", err);
+            }
+        }
+    }
+    toniefile.finalize().unwrap();
+    info!("File done");
 }
 
 fn read_header_len(buf: &[u8]) -> usize {
@@ -158,8 +210,8 @@ fn write_table_entry(entry: DirEntry, files: &mut Vec<Teddyfile>) {
             ));
         }
         Err(e) => {
-            log::error!("error reading header from file {}", entry.path().display());
-            log::error!("error: {}", e);
+            error!("error reading header from file {}", entry.path().display());
+            error!("error: {}", e);
             files.push(Teddyfile::new(
                 entry.path(),
                 false,
