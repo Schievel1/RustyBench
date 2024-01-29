@@ -1,0 +1,22 @@
+#+title: Todo
+
+* [ ] Proper error handling
+:LOGBOOK:
+- State "[ ]"        from "[ ]"        [2024-01-29 Mon 16:15]
+:END:
+* [ ] clean up
+:LOGBOOK:
+- State "[ ]"        from "[ ]"        [2024-01-29 Mon 16:15]
+:END:
+* [ ] get infos from json files
+:LOGBOOK:
+- State "[ ]"        from              [2024-01-29 Mon 16:15]
+:END:
+* [ ] set dependencies to a fixed version
+:LOGBOOK:
+- State "[ ]"        from              [2024-01-29 Mon 16:19]
+:END:
+* [ ] display some waiting icon when waiting for audio conversion
+:LOGBOOK:
+- State "[ ]"        from              [2024-01-29 Mon 16:21]
+:END:
