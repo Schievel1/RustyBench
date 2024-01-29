@@ -9,11 +9,11 @@ use toniefile::Toniefile;
 use std::env;
 use symphonia::core::errors::Error;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 use prost::Message;
 use std::fs::{self, DirEntry, File};
 use std::io::{BufReader, Read};
 use std::io::Cursor;
+use anyhow::anyhow;
 
 use crate::resampler::Resampler;
 
@@ -67,16 +67,13 @@ fn deserialize_header(len: usize, buf: &[u8]) -> Result<tonie::TonieHeader, pros
 }
 
 pub fn add_audio_file(dest: &Path, path: &Path, tag: &str) {
-    if tag.len() != 16 {
-        error!("error: tag must be 16 characters long");
-        return;
-    }
     let (filename, dirname) = tag.split_at(8);
     dbg!(&filename);
     dbg!(&dirname);
-    let dest = dest.join(rotate_bytewise(dirname));
+    let (filename, dirname) = (filename.to_string().to_ascii_uppercase(), dirname.to_string().to_ascii_uppercase());
+    let dest = dest.join(rotate_bytewise(&dirname));
     let _ = fs::create_dir(&dest);
-    let destfile = File::create(dest.join(rotate_bytewise(filename))).unwrap();
+    let destfile = File::create(dest.join(rotate_bytewise(&filename))).unwrap();
 
     let src = File::open(path).unwrap();
     // Create the media source stream.
@@ -302,12 +299,16 @@ pub fn extract_to_ogg(file: &Teddyfile, dest: &Path) {
     fs::write(dest.join(dest).with_extension("ogg"), audio).unwrap();
 }
 
-pub fn change_tag_id(file: &Teddyfile) {
-    todo!("change the tag id of a file");
-}
-
-pub fn add_note(file: &Teddyfile) {
-    todo!("add a note to a file");
+pub fn change_tag_id(picked_path: &Path, file: &Teddyfile, tag: &str) {
+    let (filename, dirname) = tag.split_at(8);
+    dbg!(&filename);
+    dbg!(&dirname);
+    let (filename, dirname) = (filename.to_string().to_ascii_uppercase(), dirname.to_string().to_ascii_uppercase());
+    let dest = picked_path.join(rotate_bytewise(&dirname));
+    let _ = fs::create_dir(&dest);
+    let _ = fs::copy(&file.path, dest.join(rotate_bytewise(&filename)));
+    let _ = fs::remove_file(&file.path);
+    let _ = fs::remove_dir(file.path.parent().unwrap());
 }
 
 pub fn extract_all(files: &[Teddyfile], path: &Path) {
@@ -324,4 +325,15 @@ pub fn play_file(file: &Teddyfile) {
         .with_extension("ogg");
     extract_to_ogg(file, &path);
     open::that(path).unwrap();
+}
+
+pub fn check_tag_id_validity(tag_id: &str) -> Result<()> {
+    if tag_id.len() != 16 {
+        return Err(anyhow!("tag ID must be 16 characters long"));
+    }
+    // tag id must be hex
+    if tag_id.chars().any(|c| !c.is_ascii_hexdigit()) {
+        return Err(anyhow!("tag ID must be hexadecimal"));
+    }
+    Ok(())
 }

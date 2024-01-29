@@ -1,4 +1,4 @@
-use eframe::{run_native, egui::{self, ViewportBuilder}};
+use eframe::{run_native, egui::ViewportBuilder};
 use rusty_bench::ui::RustyBench;
 
 fn main() {

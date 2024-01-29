@@ -1,17 +1,22 @@
-use anyhow::anyhow;
-use anyhow::Result;
+use eframe::epaint::FontId;
 use eframe::{
     egui::{self, RichText},
     epaint::Color32,
 };
 use egui_extras::{Column, TableBuilder};
-use egui_modal::Modal;
 use std::{fs, path::PathBuf};
 
+use crate::check_tag_id_validity;
 use crate::{
-    add_audio_file, add_note, change_tag_id, extract_all, extract_to_ogg, play_file,
-    populate_table, Teddyfile,
+    add_audio_file, change_tag_id, extract_all, extract_to_ogg, play_file, populate_table,
+    Teddyfile,
 };
+
+pub enum Action {
+    None,
+    AddAudioFile,
+    ChangeTagId,
+}
 
 pub struct RustyBench {
     pub picked_path: PathBuf,
@@ -21,6 +26,7 @@ pub struct RustyBench {
     pub show_id_popup: bool,
     pub tag_id: String,
     pub tag_id_valid: bool,
+    pub action: Action,
 }
 
 impl Default for RustyBench {
@@ -31,8 +37,9 @@ impl Default for RustyBench {
             files: vec![],
             selection: None,
             show_id_popup: false,
-            tag_id: Default::default(),
+            tag_id: "E0040350".to_string(),
             tag_id_valid: false,
+            action: Action::None,
         }
     }
 }
@@ -63,8 +70,8 @@ impl eframe::App for RustyBench {
                         if let Some(path) = rfd::FileDialog::new().pick_folder() {
                             self.picked_path = path;
                         }
-                        self.files.clear();
                         self.selection = None;
+                        self.files.clear();
                         populate_table(&self.picked_path, &mut self.files)
                     }
                 });
@@ -97,7 +104,8 @@ impl eframe::App for RustyBench {
                             ui.heading("Tag ID");
                         });
                         header.col(|ui| {
-                            ui.heading("Note");
+                            ui.heading("Info");
+                            // TODO fill info with json data
                         });
                     })
                     .body(|body| {
@@ -116,7 +124,7 @@ impl eframe::App for RustyBench {
                     });
             });
         });
-        egui::TopBottomPanel::bottom("Botom Panel").show(ctx, |ui| {
+        egui::TopBottomPanel::bottom("Bottom Panel").show(ctx, |ui| {
             ui.set_enabled(!self.show_id_popup);
             ui.horizontal_centered(|ui| {
                 if ui
@@ -143,15 +151,15 @@ impl eframe::App for RustyBench {
                 {
                     if let Some(path) = rfd::FileDialog::new().pick_file() {
                         self.picked_file = path;
-                        // self.show_id_popup = true;
-                        // TODO ask for tag ID in menu
                         self.show_id_popup = true;
+                        self.action = Action::AddAudioFile;
                     }
                 }
                 if ui
                     .add_sized(
                         [120., 40.],
-                        egui::Button::new("Delete file").fill(Color32::RED),
+                        egui::Button::new(egui::RichText::new("Delete file").color(Color32::BLACK))
+                            .fill(Color32::RED),
                     )
                     .clicked()
                     && self.selection.is_some()
@@ -168,7 +176,8 @@ impl eframe::App for RustyBench {
                 if ui
                     .add_sized(
                         [120., 40.],
-                        egui::Button::new("Play file").fill(Color32::RED),
+                        egui::Button::new(egui::RichText::new("Play file").color(Color32::BLACK))
+                            .fill(Color32::GREEN),
                     )
                     .clicked()
                     && self.selection.is_some()
@@ -206,17 +215,8 @@ impl eframe::App for RustyBench {
                     .clicked()
                     && self.selection.is_some()
                 {
-                    change_tag_id(&self.files[self.selection.unwrap()])
-                }
-                if ui
-                    .add_sized(
-                        [120., 40.],
-                        egui::Button::new("Add note").fill(Color32::BLUE),
-                    )
-                    .clicked()
-                    && self.selection.is_some()
-                {
-                    add_note(&self.files[self.selection.unwrap()])
+                    self.show_id_popup = true;
+                    self.action = Action::ChangeTagId;
                 }
             });
         });
@@ -226,50 +226,75 @@ impl eframe::App for RustyBench {
                 .resizable(false)
                 .show(ctx, |ui| {
                     ui.label("tag ID: ");
-                    let text_edit = egui::TextEdit::singleline(&mut self.tag_id);
-                    let response = ui.add(text_edit);
-                    if response.changed() {
-                        // TODO color the box depending on the validity of the tag ID
+                    {
+                        let text_edit = egui::TextEdit::singleline(&mut self.tag_id)
+                            .char_limit(16)
+                            .cursor_at_end(true)
+                            .lock_focus(true)
+                            .font(FontId::default());
+                        let _output = text_edit.show(ui);
                     }
-                    ui.horizontal(|ui| {
-                        if ui.button("Ok").clicked() {
-                            self.show_id_popup = false;
-                            self.tag_id_valid = true;
+                    ui.horizontal(|ui| match check_tag_id_validity(&self.tag_id) {
+                        Ok(_) => {
+                            ui.label("Tag ID is valid");
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::BOTTOM),
+                                |ui| {
+                                    if ui.button("Cancel").clicked() {
+                                        self.show_id_popup = false;
+                                        self.tag_id = "E00403500".to_string();
+                                    }
+                                    if ui.button("Ok").clicked() {
+                                        self.show_id_popup = false;
+                                        self.tag_id_valid = true;
+                                    }
+                                },
+                            );
+                        }
+                        Err(e) => {
+                            ui.label(e.to_string());
+                            self.tag_id_valid = false;
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::BOTTOM),
+                                |ui| {
+                                    if ui.button("Cancel").clicked() {
+                                        self.show_id_popup = false;
+                                        self.tag_id = "E00403500".to_string();
+                                    }
+                                    ui.add_enabled(
+                                        false,
+                                        egui::Button::new("Ok").fill(Color32::GRAY),
+                                    );
+                                },
+                            );
                         }
                     });
                 });
         }
-        if self.tag_id_valid {
-            println!("tag ID is valid");
-            self.tag_id_valid = false;
-            add_audio_file(&self.picked_path, &self.picked_file, &self.tag_id);
-            self.files.clear();
-            populate_table(&self.picked_path, &mut self.files)
+        match self.action {
+            Action::None => {}
+            Action::AddAudioFile => {
+                if self.tag_id_valid {
+                    println!("adding audio file");
+                    self.tag_id_valid = false;
+                    self.action = Action::None;
+                    add_audio_file(&self.picked_path, &self.picked_file, &self.tag_id);
+                    self.files.clear();
+                    populate_table(&self.picked_path, &mut self.files);
+                    self.tag_id = "E00403500".to_string();
+                }
+            }
+            Action::ChangeTagId => {
+                if self.tag_id_valid {
+                    self.action = Action::None;
+                    println!("changing tag id");
+                    self.tag_id_valid = false;
+                    change_tag_id(&self.picked_path, &self.files[self.selection.unwrap()], &self.tag_id);
+                    self.files.clear();
+                    populate_table(&self.picked_path, &mut self.files);
+                    self.tag_id = "E00403500".to_string();
+                }
+            }
         }
     }
-}
-
-fn show_id_popup(ctx: &egui::Context) -> Result<String> {
-    let mut tag_id = String::new();
-    let mut show = true;
-    while show {
-        egui::Window::new("Please provide a tag ID")
-            .collapsible(false)
-            .resizable(false)
-            .show(ctx, |ui| {
-                ui.label("tag ID: ");
-                let text_edit = egui::TextEdit::singleline(&mut tag_id);
-                let response = ui.add(text_edit);
-                if response.changed() {
-                    // TODO color the box depending on the validity of the tag ID
-                }
-                ui.horizontal(|ui| {
-                    if ui.button("Ok").clicked() {
-                        show = false
-                    }
-                });
-            });
-    }
-    // TODO check if tag_id is valid
-    Ok(tag_id)
 }
