@@ -946,15 +946,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "egui-modal"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e4dd394948863624a7269cedfaeb5c6a568e6d1d7accfac6fa70c283699c78b"
-dependencies = [
- "egui",
-]
-
-[[package]]
 name = "egui-winit"
 version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2599,14 +2590,12 @@ dependencies = [
  "anyhow",
  "arrayvec",
  "eframe",
- "egui-modal",
  "egui_extras",
  "env_logger",
  "flate2",
  "lazy_static",
  "log",
  "open",
- "prost",
  "prost-build",
  "rfd",
  "rubato",

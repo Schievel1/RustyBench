@@ -9,10 +9,8 @@ use toniefile::Toniefile;
 use std::env;
 use symphonia::core::errors::Error;
 use std::path::{Path, PathBuf};
-use prost::Message;
 use std::fs::{self, DirEntry, File};
 use std::io::{BufReader, Read};
-use std::io::Cursor;
 use anyhow::anyhow;
 
 use crate::resampler::Resampler;
@@ -20,11 +18,12 @@ use crate::resampler::Resampler;
 pub mod ui;
 pub mod resampler;
 
+#[allow(dead_code)]
 pub struct Teddyfile {
     path: PathBuf,
     is_valid: bool,
     hash: Vec<u8>,
-    length: u32,
+    length: u64,
     timestamp: u32,
     chapter_pages: Vec<u32>,
     tag: String,
@@ -35,7 +34,7 @@ impl Teddyfile {
         path: PathBuf,
         is_valid: bool,
         hash: Vec<u8>,
-        length: u32,
+        length: u64,
         timestamp: u32,
         chapter_pages: Vec<u32>,
         tag: String,
@@ -52,24 +51,8 @@ impl Teddyfile {
     }
 }
 
-pub mod tonie {
-    include!(concat!(env!("OUT_DIR"), "/tonie.rs"));
-}
-
-fn deserialize_header(len: usize, buf: &[u8]) -> Result<tonie::TonieHeader, prost::DecodeError> {
-    if len + 4 > buf.len() {
-        return Err(prost::DecodeError::new(
-            "header length is longer than buffer",
-        ));
-    }
-
-    tonie::TonieHeader::decode(&mut Cursor::new(buf[4..len + 4].to_vec()))
-}
-
 pub fn add_audio_file(dest: &Path, path: &Path, tag: &str) {
     let (filename, dirname) = tag.split_at(8);
-    dbg!(&filename);
-    dbg!(&dirname);
     let (filename, dirname) = (filename.to_string().to_ascii_uppercase(), dirname.to_string().to_ascii_uppercase());
     let dest = dest.join(rotate_bytewise(&dirname));
     let _ = fs::create_dir(&dest);
@@ -174,35 +157,17 @@ pub fn add_audio_file(dest: &Path, path: &Path, tag: &str) {
     info!("File done");
 }
 
-fn read_header_len(buf: &[u8]) -> usize {
-    buf[3] as usize | (buf[2] as usize) << 8
-}
-
-fn read_header_from_file(path: &Path) -> Result<tonie::TonieHeader> {
-    let f = File::open(path)?;
-    let mut reader = BufReader::with_capacity(4096, f);
-    let mut buf = [0u8; 4096];
-
-    reader.read_exact(&mut buf)?;
-    let header_len = read_header_len(&buf);
-    let header = deserialize_header(header_len, &buf)?;
-    // if path.parent().unwrap().ends_with("A33D9C12") {
-        // println!("{}", path.display());
-        // println!("{:x?}", &header);
-    // }
-    Ok(header)
-}
-
 fn write_table_entry(entry: DirEntry, files: &mut Vec<Teddyfile>) {
-    match read_header_from_file(&entry.path()) {
+    let mut f = File::open(entry.path()).unwrap();
+    match Toniefile::parse_header(&mut f) {
         Ok(header) => {
             files.push(Teddyfile::new(
                 entry.path(),
                 true,
-                header.data_hash,
-                header.data_length,
-                header.timestamp,
-                header.chapter_pages,
+                header.sha1_hash,
+                header.num_bytes,
+                header.audio_id,
+                header.track_page_nums,
                 get_tag_id(&entry.path()),
             ));
         }
@@ -280,6 +245,10 @@ pub fn get_tag_id(path: &Path) -> String {
     format!("{}{}", firsthalf, secondhalf)
 }
 
+fn read_header_len(buf: &[u8]) -> usize {
+    buf[3] as usize | (buf[2] as usize) << 8
+}
+
 fn read_audio_from_file(file: &Teddyfile) -> Result<Vec<u8>> {
     let f = File::open(&file.path)?;
     let mut reader = BufReader::new(f);
@@ -293,7 +262,7 @@ fn read_audio_from_file(file: &Teddyfile) -> Result<Vec<u8>> {
 
 pub fn extract_to_ogg(file: &Teddyfile, dest: &Path) {
     if !file.is_valid {
-        log::error!("file {} has an invalid header", file.path.display());
+        error!("file {} has an invalid header", file.path.display());
     }
     let audio = read_audio_from_file(file).unwrap();
     fs::write(dest.join(dest).with_extension("ogg"), audio).unwrap();
@@ -301,8 +270,6 @@ pub fn extract_to_ogg(file: &Teddyfile, dest: &Path) {
 
 pub fn change_tag_id(picked_path: &Path, file: &Teddyfile, tag: &str) {
     let (filename, dirname) = tag.split_at(8);
-    dbg!(&filename);
-    dbg!(&dirname);
     let (filename, dirname) = (filename.to_string().to_ascii_uppercase(), dirname.to_string().to_ascii_uppercase());
     let dest = picked_path.join(rotate_bytewise(&dirname));
     let _ = fs::create_dir(&dest);
@@ -313,7 +280,6 @@ pub fn change_tag_id(picked_path: &Path, file: &Teddyfile, tag: &str) {
 
 pub fn extract_all(files: &[Teddyfile], path: &Path) {
     for file in files {
-        dbg!(&file.path);
         extract_to_ogg(file, &path.join(&file.tag));
     }
 }
