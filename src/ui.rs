@@ -156,6 +156,7 @@ impl eframe::App for RustyBench {
                     .column(Column::auto().at_least(190.0).resizable(true))
                     .column(Column::remainder())
                     .sense(egui::Sense::click())
+                    .striped(true)
                     .header(20.0, |mut header| {
                         header.col(|ui| {
                             ui.heading("Filename");
