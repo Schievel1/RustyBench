@@ -24,7 +24,7 @@ pub struct Teddyfile {
     is_valid: bool,
     hash: Vec<u8>,
     length: u64,
-    timestamp: u32,
+    audio_id: u32,
     chapter_pages: Vec<u32>,
     tag: String,
 }
@@ -35,7 +35,7 @@ impl Teddyfile {
         is_valid: bool,
         hash: Vec<u8>,
         length: u64,
-        timestamp: u32,
+        audio_id: u32,
         chapter_pages: Vec<u32>,
         tag: String,
     ) -> Self {
@@ -44,7 +44,7 @@ impl Teddyfile {
             is_valid,
             hash,
             length,
-            timestamp,
+            audio_id,
             chapter_pages,
             tag,
         }
@@ -154,29 +154,6 @@ fn decode_encode(src: &Path, toniefile: &mut Toniefile<File>) -> Result<()> {
     Ok(())
 }
 
-pub fn add_audio_file(dest: &Path, infiles: &[PathBuf], tag: &str) -> Result<()> {
-    let (filename, dirname) = tag.split_at(8);
-    let (filename, dirname) = (
-        filename.to_string().to_ascii_uppercase(),
-        dirname.to_string().to_ascii_uppercase(),
-    );
-    let dest = dest.join(rotate_bytewise(&dirname));
-    let _ = fs::create_dir(&dest);
-    let destfile = File::create(dest.join(rotate_bytewise(&filename)))?;
-
-    let mut toniefile = Toniefile::new_simple(destfile)?;
-
-    let mut infiles_iter = infiles.iter();
-    let first_path = infiles_iter.next().ok_or(anyhow!("no input files"))?;
-    decode_encode(first_path, &mut toniefile)?;
-    for file in infiles_iter {
-        toniefile.new_chapter()?;
-        decode_encode(file, &mut toniefile)?;
-    }
-    info!("all files encoded, finalizing...");
-    toniefile.finalize()?;
-    Ok(())
-}
 
 fn write_table_entry(entry: DirEntry, files: &mut Vec<Teddyfile>) -> Result<()> {
     let mut f = File::open(entry.path())?;
@@ -209,22 +186,6 @@ fn write_table_entry(entry: DirEntry, files: &mut Vec<Teddyfile>) -> Result<()> 
     Ok(())
 }
 
-pub fn populate_table(path: &Path, files: &mut Vec<Teddyfile>) -> Result<()> {
-    for entry in path.read_dir()?.flatten() {
-        if entry.path().is_dir() {
-            if let Some(filename) = entry.path().file_name() {
-                if !filename.to_string_lossy().starts_with("000000") {
-                    for entry in entry.path().read_dir()?.flatten() {
-                        if entry.path().is_file() {
-                            write_table_entry(entry, files)?;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    Ok(())
-}
 
 fn rotate_bytewise(input: &str) -> String {
     if input.len() != 8 {
@@ -244,7 +205,7 @@ fn rotate_bytewise(input: &str) -> String {
     )
 }
 
-pub fn get_tag_id(path: &Path) -> Option<String> {
+fn get_tag_id(path: &Path) -> Option<String> {
     let mut ancestors = path.ancestors();
     let firsthalf = ancestors.next()?.file_name()?.to_str()?;
     let secondhalf = ancestors.next()?.file_name()?.to_str()?;
@@ -331,5 +292,46 @@ pub fn check_tag_id_validity(tag_id: &str) -> Result<()> {
     if tag_id.chars().any(|c| !c.is_ascii_hexdigit()) {
         return Err(anyhow!("tag ID must be hexadecimal"));
     }
+    Ok(())
+}
+
+pub fn populate_table(path: &Path, files: &mut Vec<Teddyfile>) -> Result<()> {
+    for entry in path.read_dir()?.flatten() {
+        if entry.path().is_dir() {
+            if let Some(filename) = entry.path().file_name() {
+                if !filename.to_string_lossy().starts_with("000000") {
+                    for entry in entry.path().read_dir()?.flatten() {
+                        if entry.path().is_file() {
+                            write_table_entry(entry, files)?;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn add_audio_file(dest: &Path, infiles: &[PathBuf], tag: &str) -> Result<()> {
+    let (filename, dirname) = tag.split_at(8);
+    let (filename, dirname) = (
+        filename.to_string().to_ascii_uppercase(),
+        dirname.to_string().to_ascii_uppercase(),
+    );
+    let dest = dest.join(rotate_bytewise(&dirname));
+    let _ = fs::create_dir(&dest);
+    let destfile = File::create(dest.join(rotate_bytewise(&filename)))?;
+
+    let mut toniefile = Toniefile::new_simple(destfile)?;
+
+    let mut infiles_iter = infiles.iter();
+    let first_path = infiles_iter.next().ok_or(anyhow!("no input files"))?;
+    decode_encode(first_path, &mut toniefile)?;
+    for file in infiles_iter {
+        toniefile.new_chapter()?;
+        decode_encode(file, &mut toniefile)?;
+    }
+    info!("all files encoded, finalizing...");
+    toniefile.finalize()?;
     Ok(())
 }

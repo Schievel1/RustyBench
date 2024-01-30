@@ -35,7 +35,6 @@ pub struct RustyBench {
     pub files: Vec<Teddyfile>,
     pub selection: Option<usize>,
     pub show_id_popup: bool,
-    pub show_error_popup: bool,
     pub tag_id: String,
     pub tag_id_valid: bool,
     pub error: Option<Error>,
@@ -51,7 +50,6 @@ impl Default for RustyBench {
             files: vec![],
             selection: None,
             show_id_popup: false,
-            show_error_popup: false,
             tag_id: "E0040350".to_string(),
             tag_id_valid: false,
             error: None,
@@ -298,7 +296,6 @@ impl eframe::App for RustyBench {
                     }
                     ui.horizontal(|ui| {
                         if ui.button("Ok").clicked() {
-                            self.show_error_popup = false;
                             self.error = None;
                         }
                     });
@@ -340,7 +337,8 @@ impl eframe::App for RustyBench {
                         &self.picked_path,
                         &self.files[self.selection.unwrap()],
                         &self.tag_id,
-                    ).unwrap_or_else(|e| self.error = Some(e));
+                    )
+                    .unwrap_or_else(|e| self.error = Some(e));
                     self.action = Action::PopulateTable;
                     self.tag_id = "E0040350".to_string();
                 }
