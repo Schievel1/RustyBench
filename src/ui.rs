@@ -6,12 +6,13 @@ use eframe::{
 };
 use egui_extras::{Column, TableBuilder};
 use log::{error, info};
-use std::{fs, path::PathBuf};
+use std::ffi::OsStr;
+use std::path::PathBuf;
 
 use crate::check_tag_id_validity;
 use crate::{
-    add_audio_file, change_tag_id, extract_all, extract_to_ogg, play_file, populate_table,
-    Teddyfile,
+    add_audio_file, change_tag_id, delete_file, extract_all, extract_to_ogg, play_file,
+    populate_table, Teddyfile,
 };
 
 pub enum Action {
@@ -126,13 +127,16 @@ impl eframe::App for RustyBench {
                             let row_index = row.index();
                             row.set_selected(self.selection == Some(row_index));
                             row.col(|ui| {
-                                let parent = self.files[row_index]
-                                    .path
-                                    .parent()
-                                    .unwrap()
-                                    .file_name()
-                                    .unwrap();
-                                let file = self.files[row_index].path.file_name().unwrap();
+                                let mut parent = OsStr::new("");
+                                if let Some(p) = self.files[row_index].path.parent() {
+                                    if let Some(f) = p.file_name() {
+                                        parent = f;
+                                    }
+                                }
+                                let mut file = OsStr::new("");
+                                if let Some(f) = self.files[row_index].path.file_name() {
+                                    file = f;
+                                }
                                 let parent_and_file = String::from(parent.to_string_lossy())
                                     + "/"
                                     + &file.to_string_lossy();
@@ -300,6 +304,8 @@ impl eframe::App for RustyBench {
                     });
                 });
         }
+        // NOTE unwrapping self.selection is ok below here, because the buttons are disabled if
+        // self.selection is None
         match self.action {
             Action::None => {}
             Action::AskAddAudioFile => {
@@ -315,7 +321,8 @@ impl eframe::App for RustyBench {
                     self.action = Action::None;
                     info!("adding audio file");
                     self.tag_id_valid = false;
-                    add_audio_file(&self.picked_path, &self.picked_files, &self.tag_id).unwrap_or_else(|e| self.error = Some(e));
+                    add_audio_file(&self.picked_path, &self.picked_files, &self.tag_id)
+                        .unwrap_or_else(|e| self.error = Some(e));
                     self.action = Action::PopulateTable;
                     self.tag_id = "E0040350".to_string();
                 }
@@ -333,7 +340,7 @@ impl eframe::App for RustyBench {
                         &self.picked_path,
                         &self.files[self.selection.unwrap()],
                         &self.tag_id,
-                    );
+                    ).unwrap_or_else(|e| self.error = Some(e));
                     self.action = Action::PopulateTable;
                     self.tag_id = "E0040350".to_string();
                 }
@@ -343,35 +350,34 @@ impl eframe::App for RustyBench {
                 self.action = Action::None;
                 self.selection = None;
                 self.files.clear();
-                populate_table(&self.picked_path, &mut self.files);
+                populate_table(&self.picked_path, &mut self.files)
+                    .unwrap_or_else(|e| self.error = Some(e));
             }
             Action::ExtractToOgg => {
                 info!("extracting to ogg");
                 self.action = Action::None;
                 if let Some(path) = rfd::FileDialog::new().set_file_name(".ogg").save_file() {
-                    extract_to_ogg(&self.files[self.selection.unwrap()], &path);
+                    extract_to_ogg(&self.files[self.selection.unwrap()], &path)
+                        .unwrap_or_else(|e| self.error = Some(e));
                 }
             }
             Action::ExtractAll => {
                 info!("extracting all");
                 self.action = Action::None;
                 if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                    extract_all(&self.files, &path);
+                    extract_all(&self.files, &path).unwrap_or_else(|e| self.error = Some(e));
                 }
             }
             Action::PlayFile => {
                 info!("playing file");
                 self.action = Action::None;
-                play_file(&self.files[self.selection.unwrap()]);
+                play_file(&self.files[self.selection.unwrap()])
+                    .unwrap_or_else(|e| self.error = Some(e));
             }
             Action::DeleteFile => {
                 info!("deleting file");
-                let path = self.files[self.selection.unwrap()].path.clone();
-                let parent = path.parent().unwrap();
-                fs::remove_file(&path).unwrap();
-                if parent.read_dir().unwrap().next().is_none() {
-                    fs::remove_dir(parent).unwrap();
-                }
+                delete_file(&self.files[self.selection.unwrap()])
+                    .unwrap_or_else(|e| self.error = Some(e));
                 self.action = Action::PopulateTable;
             }
         }

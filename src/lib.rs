@@ -127,8 +127,10 @@ fn decode_encode(src: &Path, toniefile: &mut Toniefile<File>) -> Result<()> {
                         decoded.capacity() as u64 / 2,
                     ));
                 }
-                if let Some(resampled) = resampler.as_mut().unwrap().resample(decoded.clone()) {
-                    toniefile.encode(resampled)?;
+                if let Some(res) = resampler.as_mut() {
+                    if let Some(resampled) = res.resample(decoded.clone()) {
+                        toniefile.encode(resampled)?;
+                    }
                 }
             }
             Err(Error::IoError(_)) => {
@@ -176,8 +178,8 @@ pub fn add_audio_file(dest: &Path, infiles: &[PathBuf], tag: &str) -> Result<()>
     Ok(())
 }
 
-fn write_table_entry(entry: DirEntry, files: &mut Vec<Teddyfile>) {
-    let mut f = File::open(entry.path()).unwrap();
+fn write_table_entry(entry: DirEntry, files: &mut Vec<Teddyfile>) -> Result<()> {
+    let mut f = File::open(entry.path())?;
     match Toniefile::parse_header(&mut f) {
         Ok(header) => {
             files.push(Teddyfile::new(
@@ -187,7 +189,7 @@ fn write_table_entry(entry: DirEntry, files: &mut Vec<Teddyfile>) {
                 header.num_bytes,
                 header.audio_id,
                 header.track_page_nums,
-                get_tag_id(&entry.path()),
+                get_tag_id(&entry.path()).unwrap_or("invalid".into()),
             ));
         }
         Err(e) => {
@@ -200,29 +202,28 @@ fn write_table_entry(entry: DirEntry, files: &mut Vec<Teddyfile>) {
                 0,
                 0,
                 vec![],
-                get_tag_id(&entry.path()),
+                get_tag_id(&entry.path()).unwrap_or("invalid".into()),
             ));
         }
     }
+    Ok(())
 }
 
-pub fn populate_table(path: &Path, files: &mut Vec<Teddyfile>) {
-    for entry in path.read_dir().unwrap().flatten() {
-        if entry.path().is_dir()
-            && !entry
-                .path()
-                .file_name()
-                .unwrap()
-                .to_string_lossy()
-                .starts_with("000000")
-        {
-            for entry in entry.path().read_dir().unwrap().flatten() {
-                if entry.path().is_file() {
-                    write_table_entry(entry, files);
+pub fn populate_table(path: &Path, files: &mut Vec<Teddyfile>) -> Result<()> {
+    for entry in path.read_dir()?.flatten() {
+        if entry.path().is_dir() {
+            if let Some(filename) = entry.path().file_name() {
+                if !filename.to_string_lossy().starts_with("000000") {
+                    for entry in entry.path().read_dir()?.flatten() {
+                        if entry.path().is_file() {
+                            write_table_entry(entry, files)?;
+                        }
+                    }
                 }
             }
         }
     }
+    Ok(())
 }
 
 fn rotate_bytewise(input: &str) -> String {
@@ -243,29 +244,20 @@ fn rotate_bytewise(input: &str) -> String {
     )
 }
 
-pub fn get_tag_id(path: &Path) -> String {
+pub fn get_tag_id(path: &Path) -> Option<String> {
     let mut ancestors = path.ancestors();
-    let firsthalf = ancestors
-        .next()
-        .unwrap()
-        .file_name()
-        .unwrap()
-        .to_str()
-        .unwrap();
-    let secondhalf = ancestors
-        .next()
-        .unwrap()
-        .file_name()
-        .unwrap()
-        .to_str()
-        .unwrap();
+    let firsthalf = ancestors.next()?.file_name()?.to_str()?;
+    let secondhalf = ancestors.next()?.file_name()?.to_str()?;
     let firsthalf = rotate_bytewise(firsthalf);
     let secondhalf = rotate_bytewise(secondhalf);
-    format!("{}{}", firsthalf, secondhalf)
+    Some(format!("{}{}", firsthalf, secondhalf))
 }
 
-fn read_header_len(buf: &[u8]) -> usize {
-    buf[3] as usize | (buf[2] as usize) << 8
+fn read_header_len(buf: &[u8]) -> Result<usize> {
+    if buf.len() < 4 {
+        return Err(anyhow!("file too short"));
+    }
+    Ok(buf[3] as usize | (buf[2] as usize) << 8)
 }
 
 fn read_audio_from_file(file: &Teddyfile) -> Result<Vec<u8>> {
@@ -274,45 +266,61 @@ fn read_audio_from_file(file: &Teddyfile) -> Result<Vec<u8>> {
     let mut buf: Vec<u8> = Vec::new();
 
     reader.read_to_end(&mut buf)?;
-    let header_len = read_header_len(&buf);
+    let header_len = read_header_len(&buf)?;
 
     Ok(buf[header_len + 4..].to_vec())
 }
 
-pub fn extract_to_ogg(file: &Teddyfile, dest: &Path) {
+pub fn extract_to_ogg(file: &Teddyfile, dest: &Path) -> Result<()> {
     if !file.is_valid {
         error!("file {} has an invalid header", file.path.display());
     }
-    let audio = read_audio_from_file(file).unwrap();
-    fs::write(dest.join(dest).with_extension("ogg"), audio).unwrap();
+    let audio = read_audio_from_file(file)?;
+    fs::write(dest.join(dest).with_extension("ogg"), audio)?;
+    Ok(())
 }
 
-pub fn change_tag_id(picked_path: &Path, file: &Teddyfile, tag: &str) {
+pub fn change_tag_id(picked_path: &Path, file: &Teddyfile, tag: &str) -> Result<()> {
     let (filename, dirname) = tag.split_at(8);
     let (filename, dirname) = (
         filename.to_string().to_ascii_uppercase(),
         dirname.to_string().to_ascii_uppercase(),
     );
     let dest = picked_path.join(rotate_bytewise(&dirname));
-    let _ = fs::create_dir(&dest);
-    let _ = fs::copy(&file.path, dest.join(rotate_bytewise(&filename)));
-    let _ = fs::remove_file(&file.path);
-    let _ = fs::remove_dir(file.path.parent().unwrap());
-}
-
-pub fn extract_all(files: &[Teddyfile], path: &Path) {
-    for file in files {
-        extract_to_ogg(file, &path.join(&file.tag));
+    fs::create_dir(&dest)?;
+    fs::copy(&file.path, dest.join(rotate_bytewise(&filename)))?;
+    fs::remove_file(&file.path)?;
+    if let Some(parent) = file.path.parent() {
+        fs::remove_dir(parent)?;
     }
+    Ok(())
 }
 
-pub fn play_file(file: &Teddyfile) {
+pub fn delete_file(file: &Teddyfile) -> Result<()> {
+    fs::remove_file(&file.path)?;
+    if let Some(parent) = file.path.parent() {
+        fs::remove_dir(parent)?;
+    }
+    Ok(())
+}
+
+pub fn extract_all(files: &[Teddyfile], path: &Path) -> Result<()> {
+    for file in files {
+        extract_to_ogg(file, &path.join(&file.tag)).unwrap_or_else(|e| {
+            error!("error extracting file {}: {}", file.path.display(), e);
+        });
+    }
+    Ok(())
+}
+
+pub fn play_file(file: &Teddyfile) -> Result<()> {
     let dir = env::temp_dir();
     let path = dir
-        .join(file.path.file_name().unwrap())
+        .join(file.path.file_name().unwrap_or_default())
         .with_extension("ogg");
-    extract_to_ogg(file, &path);
-    open::that(path).unwrap();
+    extract_to_ogg(file, &path)?;
+    open::that(path)?;
+    Ok(())
 }
 
 pub fn check_tag_id_validity(tag_id: &str) -> Result<()> {

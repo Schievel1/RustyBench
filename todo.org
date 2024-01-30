@@ -1,7 +1,8 @@
 #+title: Todo
 
-* [ ] Proper error handling
+* [X] Proper error handling
 :LOGBOOK:
+- State "[X]"        from "[ ]"        [2024-01-30 Tue 09:32]
 - State "[ ]"        from "[ ]"        [2024-01-29 Mon 16:15]
 :END:
 * [ ] clean up
