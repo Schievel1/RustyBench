@@ -6,17 +6,21 @@ use std::fs::{self, DirEntry, File};
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
-use symphonia::core::errors::Error;
+use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use toniefile::Toniefile;
 
+#[macro_use]
+extern crate lazy_static;
+
 use crate::resampler::Resampler;
 
 pub mod resampler;
 pub mod ui;
+pub mod tonielist;
 
 #[allow(dead_code)]
 pub struct Teddyfile {
@@ -133,12 +137,12 @@ fn decode_encode(src: &Path, toniefile: &mut Toniefile<File>) -> Result<()> {
                     }
                 }
             }
-            Err(Error::IoError(_)) => {
+            Err(SymphoniaError::IoError(_)) => {
                 // The packet failed to decode due to an IO error, skip the packet.
                 info!("IO error");
                 continue;
             }
-            Err(Error::DecodeError(_)) => {
+            Err(SymphoniaError::DecodeError(_)) => {
                 // The packet failed to decode due to invalid data, skip the packet.
                 info!("Decode error");
                 continue;
@@ -153,7 +157,6 @@ fn decode_encode(src: &Path, toniefile: &mut Toniefile<File>) -> Result<()> {
     info!("File done");
     Ok(())
 }
-
 
 fn write_table_entry(entry: DirEntry, files: &mut Vec<Teddyfile>) -> Result<()> {
     let mut f = File::open(entry.path())?;
@@ -185,7 +188,6 @@ fn write_table_entry(entry: DirEntry, files: &mut Vec<Teddyfile>) -> Result<()> 
     }
     Ok(())
 }
-
 
 fn rotate_bytewise(input: &str) -> String {
     if input.len() != 8 {

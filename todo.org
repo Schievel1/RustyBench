@@ -10,8 +10,9 @@
 - State "[X]"        from "[X]"        [2024-01-30 Tue 09:56]
 - State "[ ]"        from "[ ]"        [2024-01-29 Mon 16:15]
 :END:
-* [ ] get infos from json files
+* [X] get infos from json files
 :LOGBOOK:
+- State "[X]"        from "[ ]"        [2024-01-30 Tue 15:12]
 - State "[ ]"        from              [2024-01-29 Mon 16:15]
 :END:
 * [X] set dependencies to a fixed version

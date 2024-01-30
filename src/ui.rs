@@ -9,10 +9,10 @@ use log::{error, info};
 use std::ffi::OsStr;
 use std::path::PathBuf;
 
-use crate::check_tag_id_validity;
+use crate::tonielist::find_tonie_with_audio_id;
 use crate::{
     add_audio_file, change_tag_id, delete_file, extract_all, extract_to_ogg, play_file,
-    populate_table, Teddyfile,
+    populate_table, Teddyfile, check_tag_id_validity,
 };
 
 pub enum Action {
@@ -117,7 +117,6 @@ impl eframe::App for RustyBench {
                         });
                         header.col(|ui| {
                             ui.heading("Info");
-                            // TODO fill info with json data
                         });
                     })
                     .body(|body| {
@@ -142,6 +141,19 @@ impl eframe::App for RustyBench {
                             });
                             row.col(|ui| {
                                 ui.label(&self.files[row_index].tag);
+                            });
+                            row.col(|ui| {
+                                if let Some(t) =
+                                    find_tonie_with_audio_id(self.files[row_index].audio_id)
+                                {
+                                    ui.label(format!(
+                                        "{} - {}",
+                                        &t.data[0].series.clone().unwrap_or_default(),
+                                        &t.data[0].episode.clone().unwrap_or_default()
+                                    ));
+                                } else {
+                                    ui.label("unknown");
+                                }
                             });
 
                             self.toggle_row_selection(row_index, &row.response());
