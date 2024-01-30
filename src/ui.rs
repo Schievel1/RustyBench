@@ -440,8 +440,15 @@ impl eframe::App for RustyBench {
             }
             Action::DeleteFile => {
                 info!("deleting file");
-                delete_file(&self.files[self.selection.unwrap()])
-                    .unwrap_or_else(|e| self.error = Some(e));
+                if rfd::MessageDialog::new()
+                    .set_description("Do you really want to delete this file?")
+                    .set_buttons(rfd::MessageButtons::YesNo)
+                    .show()
+                    == rfd::MessageDialogResult::Yes
+                {
+                    delete_file(&self.files[self.selection.unwrap()])
+                        .unwrap_or_else(|e| self.error = Some(e));
+                }
                 self.action = Action::PopulateTable;
             }
             Action::ShowFileData => {
