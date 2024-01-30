@@ -14,8 +14,9 @@
 :LOGBOOK:
 - State "[ ]"        from              [2024-01-29 Mon 16:15]
 :END:
-* [ ] set dependencies to a fixed version
+* [X] set dependencies to a fixed version
 :LOGBOOK:
+- State "[X]"        from "[ ]"        [2024-01-30 Tue 09:57]
 - State "[ ]"        from              [2024-01-29 Mon 16:19]
 :END:
 * [ ] display some waiting icon when waiting for audio conversion
