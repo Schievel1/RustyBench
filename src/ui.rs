@@ -1,9 +1,11 @@
 use anyhow::Error;
-use eframe::epaint::FontId;
 use eframe::{
     egui::{self, RichText},
     epaint::Color32,
 };
+use egui::FontFamily::{self, Proportional};
+use egui::FontId;
+use egui::TextStyle::*;
 use egui_extras::{Column, TableBuilder};
 use log::{error, info};
 use std::ffi::OsStr;
@@ -60,10 +62,25 @@ impl Default for RustyBench {
 }
 
 impl RustyBench {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        RustyBench::setup_app(&cc.egui_ctx);
         Self {
             ..Default::default()
         }
+    }
+    fn setup_app(ctx: &egui::Context) {
+        let mut style = (*ctx.style()).clone();
+        style.text_styles = [
+            (Heading, FontId::new(20.0, Proportional)),
+            (Name("Heading2".into()), FontId::new(25.0, Proportional)),
+            (Name("Context".into()), FontId::new(23.0, Proportional)),
+            (Body, FontId::new(14.0, Proportional)),
+            (Monospace, FontId::new(14.0, FontFamily::Monospace)),
+            (Button, FontId::new(14.0, Proportional)),
+            (Small, FontId::new(10.0, Proportional)),
+        ]
+        .into();
+        ctx.set_style(style);
     }
     fn toggle_row_selection(&mut self, row_index: usize, row_response: &egui::Response) {
         if row_response.clicked() {
@@ -135,8 +152,8 @@ impl eframe::App for RustyBench {
                     ui.label("Files");
                 });
                 TableBuilder::new(ui)
-                    .column(Column::auto().at_least(150.0).resizable(true))
-                    .column(Column::auto().at_least(150.0).resizable(true))
+                    .column(Column::auto().at_least(140.0).resizable(true))
+                    .column(Column::auto().at_least(190.0).resizable(true))
                     .column(Column::remainder())
                     .sense(egui::Sense::click())
                     .header(20.0, |mut header| {
@@ -170,10 +187,15 @@ impl eframe::App for RustyBench {
                                 let parent_and_file = String::from(parent.to_string_lossy())
                                     + "/"
                                     + &file.to_string_lossy();
-                                ui.label(parent_and_file);
+                                ui.label(RichText::new(parent_and_file).monospace());
                             });
                             row.col(|ui| {
-                                ui.label(self.format_tag_id(&self.files[row_index].tag));
+                                ui.label(
+                                    egui::RichText::new(
+                                        self.format_tag_id(&self.files[row_index].tag),
+                                    )
+                                    .monospace(),
+                                );
                             });
                             row.col(|ui| {
                                 if let Some(t) =
