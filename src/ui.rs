@@ -1,10 +1,11 @@
+use anyhow::Error;
 use eframe::epaint::FontId;
 use eframe::{
     egui::{self, RichText},
     epaint::Color32,
 };
 use egui_extras::{Column, TableBuilder};
-use log::info;
+use log::{error, info};
 use std::{fs, path::PathBuf};
 
 use crate::check_tag_id_validity;
@@ -29,11 +30,14 @@ pub enum Action {
 pub struct RustyBench {
     pub picked_path: PathBuf,
     pub picked_file: PathBuf,
+    pub picked_files: Vec<PathBuf>,
     pub files: Vec<Teddyfile>,
     pub selection: Option<usize>,
     pub show_id_popup: bool,
+    pub show_error_popup: bool,
     pub tag_id: String,
     pub tag_id_valid: bool,
+    pub error: Option<Error>,
     pub action: Action,
 }
 
@@ -42,11 +46,14 @@ impl Default for RustyBench {
         Self {
             picked_path: Default::default(),
             picked_file: Default::default(),
+            picked_files: vec![],
             files: vec![],
             selection: None,
             show_id_popup: false,
+            show_error_popup: false,
             tag_id: "E0040350".to_string(),
             tag_id_valid: false,
+            error: None,
             action: Action::None,
         }
     }
@@ -271,12 +278,34 @@ impl eframe::App for RustyBench {
                     });
                 });
         }
+
+        if self.error.is_some() {
+            egui::Window::new("Error")
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label("Error: ");
+                    if let Some(error) = &self.error {
+                        ui.label(error.to_string());
+                        error!("{}", error);
+                    } else {
+                        ui.label("unknown error");
+                        error!("unknown error");
+                    }
+                    ui.horizontal(|ui| {
+                        if ui.button("Ok").clicked() {
+                            self.show_error_popup = false;
+                            self.error = None;
+                        }
+                    });
+                });
+        }
         match self.action {
             Action::None => {}
             Action::AskAddAudioFile => {
                 self.action = Action::None;
-                if let Some(path) = rfd::FileDialog::new().pick_file() {
-                    self.picked_file = path;
+                if let Some(files) = rfd::FileDialog::new().pick_files() {
+                    self.picked_files = files;
                     self.show_id_popup = true;
                     self.action = Action::AddAudioFile;
                 }
@@ -286,7 +315,7 @@ impl eframe::App for RustyBench {
                     self.action = Action::None;
                     info!("adding audio file");
                     self.tag_id_valid = false;
-                    add_audio_file(&self.picked_path, &self.picked_file, &self.tag_id);
+                    add_audio_file(&self.picked_path, &self.picked_files, &self.tag_id).unwrap_or_else(|e| self.error = Some(e));
                     self.action = Action::PopulateTable;
                     self.tag_id = "E0040350".to_string();
                 }

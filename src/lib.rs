@@ -1,22 +1,22 @@
+use anyhow::anyhow;
 use anyhow::Result;
 use log::{error, info};
+use std::env;
+use std::fs::{self, DirEntry, File};
+use std::io::{BufReader, Read};
+use std::path::{Path, PathBuf};
 use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
+use symphonia::core::errors::Error;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use toniefile::Toniefile;
-use std::env;
-use symphonia::core::errors::Error;
-use std::path::{Path, PathBuf};
-use std::fs::{self, DirEntry, File};
-use std::io::{BufReader, Read};
-use anyhow::anyhow;
 
 use crate::resampler::Resampler;
 
-pub mod ui;
 pub mod resampler;
+pub mod ui;
 
 #[allow(dead_code)]
 pub struct Teddyfile {
@@ -51,29 +51,27 @@ impl Teddyfile {
     }
 }
 
-pub fn add_audio_file(dest: &Path, path: &Path, tag: &str) {
-    let (filename, dirname) = tag.split_at(8);
-    let (filename, dirname) = (filename.to_string().to_ascii_uppercase(), dirname.to_string().to_ascii_uppercase());
-    let dest = dest.join(rotate_bytewise(&dirname));
-    let _ = fs::create_dir(&dest);
-    let destfile = File::create(dest.join(rotate_bytewise(&filename))).unwrap();
-
-    let src = File::open(path).unwrap();
-    // Create the media source stream.
-    let mss = MediaSourceStream::new(Box::new(src), Default::default());
+fn decode_encode(src: &Path, toniefile: &mut Toniefile<File>) -> Result<()> {
+    info!("Encoding input file: {}", src.display());
 
     // if the input file has an extension, use it as a hint for the media format.
     let mut hint = Hint::new();
-    if let Some(ext) = path.extension() {
+    if let Some(ext) = src.extension() {
         if let Some(ext) = ext.to_str() {
             hint.with_extension(ext);
         }
     }
 
+    let src = std::fs::File::open(src)?;
+
+    // Create the media source stream.
+    let mss = MediaSourceStream::new(Box::new(src), Default::default());
+
     let meta_opts: MetadataOptions = Default::default();
     let fmt_opts: FormatOptions = Default::default();
+
     // Probe the media source.
-    let probed = symphonia::default::get_probe().format(&hint, mss, &fmt_opts, &meta_opts).unwrap();
+    let probed = symphonia::default::get_probe().format(&hint, mss, &fmt_opts, &meta_opts)?;
 
     // Get the instantiated format reader.
     let mut format = probed.format;
@@ -81,18 +79,14 @@ pub fn add_audio_file(dest: &Path, path: &Path, tag: &str) {
         .tracks()
         .iter()
         .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
-        .unwrap();
-        // .ok_or(anyhow::anyhow!("No supported audio track found"));
+        .ok_or(anyhow::anyhow!("No supported audio track found"))?;
 
     // Create a decoder for the track.
     let dec_opts: DecoderOptions = Default::default();
-    let mut decoder = symphonia::default::get_codecs().make(&track.codec_params, &dec_opts).unwrap();
+    let mut decoder = symphonia::default::get_codecs().make(&track.codec_params, &dec_opts)?;
 
     // Store the track identifier, it will be used to filter packets.
     let track_id = track.id;
-
-    // create a Toniefile to write to later
-    let mut toniefile = Toniefile::new_simple(destfile).unwrap();
 
     // create a resampler to convert to 48kHz
     let mut resampler: Option<Resampler<i16>> = None;
@@ -111,7 +105,7 @@ pub fn add_audio_file(dest: &Path, path: &Path, tag: &str) {
 
     while let Ok(packet) = format.next_packet() {
         let progress = packet.ts * 100 / tracklen;
-        info!("Progress: {}%", progress);
+        print!("\rProgress: {}%", progress);
         // Consume any new metadata that has been read since the last packet.
         while !format.metadata().is_latest() {
             format.metadata().pop();
@@ -134,27 +128,52 @@ pub fn add_audio_file(dest: &Path, path: &Path, tag: &str) {
                     ));
                 }
                 if let Some(resampled) = resampler.as_mut().unwrap().resample(decoded.clone()) {
-                    toniefile.encode(resampled).unwrap();
+                    toniefile.encode(resampled)?;
                 }
             }
             Err(Error::IoError(_)) => {
                 // The packet failed to decode due to an IO error, skip the packet.
-                error!("IO error");
+                info!("IO error");
                 continue;
             }
             Err(Error::DecodeError(_)) => {
                 // The packet failed to decode due to invalid data, skip the packet.
-                error!("Decode error");
+                info!("Decode error");
                 continue;
             }
             Err(err) => {
                 // An unrecoverable error occured, halt decoding.
-                panic!("{}", err);
+                return Err(err.into());
             }
         }
     }
-    toniefile.finalize().unwrap();
+    info!("\rProgress: 100%");
     info!("File done");
+    Ok(())
+}
+
+pub fn add_audio_file(dest: &Path, infiles: &[PathBuf], tag: &str) -> Result<()> {
+    let (filename, dirname) = tag.split_at(8);
+    let (filename, dirname) = (
+        filename.to_string().to_ascii_uppercase(),
+        dirname.to_string().to_ascii_uppercase(),
+    );
+    let dest = dest.join(rotate_bytewise(&dirname));
+    let _ = fs::create_dir(&dest);
+    let destfile = File::create(dest.join(rotate_bytewise(&filename)))?;
+
+    let mut toniefile = Toniefile::new_simple(destfile)?;
+
+    let mut infiles_iter = infiles.iter();
+    let first_path = infiles_iter.next().ok_or(anyhow!("no input files"))?;
+    decode_encode(first_path, &mut toniefile)?;
+    for file in infiles_iter {
+        toniefile.new_chapter()?;
+        decode_encode(file, &mut toniefile)?;
+    }
+    info!("all files encoded, finalizing...");
+    toniefile.finalize()?;
+    Ok(())
 }
 
 fn write_table_entry(entry: DirEntry, files: &mut Vec<Teddyfile>) {
@@ -270,7 +289,10 @@ pub fn extract_to_ogg(file: &Teddyfile, dest: &Path) {
 
 pub fn change_tag_id(picked_path: &Path, file: &Teddyfile, tag: &str) {
     let (filename, dirname) = tag.split_at(8);
-    let (filename, dirname) = (filename.to_string().to_ascii_uppercase(), dirname.to_string().to_ascii_uppercase());
+    let (filename, dirname) = (
+        filename.to_string().to_ascii_uppercase(),
+        dirname.to_string().to_ascii_uppercase(),
+    );
     let dest = picked_path.join(rotate_bytewise(&dirname));
     let _ = fs::create_dir(&dest);
     let _ = fs::copy(&file.path, dest.join(rotate_bytewise(&filename)));
