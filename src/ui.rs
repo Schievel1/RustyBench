@@ -11,8 +11,8 @@ use std::path::PathBuf;
 
 use crate::tonielist::find_tonie_with_audio_id;
 use crate::{
-    add_audio_file, change_tag_id, delete_file, extract_all, extract_to_ogg, play_file,
-    populate_table, Teddyfile, check_tag_id_validity,
+    add_audio_file, change_tag_id, check_tag_id_validity, delete_file, extract_all, extract_to_ogg,
+    play_file, populate_table, Teddyfile,
 };
 
 pub enum Action {
@@ -26,6 +26,7 @@ pub enum Action {
     ExtractAll,
     PlayFile,
     DeleteFile,
+    ShowFileData,
 }
 
 pub struct RustyBench {
@@ -67,6 +68,36 @@ impl RustyBench {
     fn toggle_row_selection(&mut self, row_index: usize, row_response: &egui::Response) {
         if row_response.clicked() {
             self.selection = Some(row_index);
+        }
+        if row_response.double_clicked() {
+            self.selection = Some(row_index);
+            self.action = Action::ShowFileData;
+        }
+    }
+    fn format_tag_id(&self, tag_id: &str) -> String {
+        if tag_id.len() == 16 {
+            let mut tag_id = tag_id.chars();
+            format!(
+                "{}{}:{}{}:{}{}:{}{}:{}{}:{}{}:{}{}:{}{}",
+                tag_id.next().unwrap_or_default(),
+                tag_id.next().unwrap_or_default(),
+                tag_id.next().unwrap_or_default(),
+                tag_id.next().unwrap_or_default(),
+                tag_id.next().unwrap_or_default(),
+                tag_id.next().unwrap_or_default(),
+                tag_id.next().unwrap_or_default(),
+                tag_id.next().unwrap_or_default(),
+                tag_id.next().unwrap_or_default(),
+                tag_id.next().unwrap_or_default(),
+                tag_id.next().unwrap_or_default(),
+                tag_id.next().unwrap_or_default(),
+                tag_id.next().unwrap_or_default(),
+                tag_id.next().unwrap_or_default(),
+                tag_id.next().unwrap_or_default(),
+                tag_id.next().unwrap_or_default()
+            )
+        } else {
+            "invalid legnth".to_string()
         }
     }
 }
@@ -123,6 +154,8 @@ impl eframe::App for RustyBench {
                         body.rows(30.0, self.files.len(), |mut row| {
                             let row_index = row.index();
                             row.set_selected(self.selection == Some(row_index));
+                            // TODO I am not shure if it's a good idea to populate the table here
+                            // This is executed every frame when the mouse is over the table
                             row.col(|ui| {
                                 let mut parent = OsStr::new("");
                                 if let Some(p) = self.files[row_index].path.parent() {
@@ -140,7 +173,7 @@ impl eframe::App for RustyBench {
                                 ui.label(parent_and_file);
                             });
                             row.col(|ui| {
-                                ui.label(&self.files[row_index].tag);
+                                ui.label(self.format_tag_id(&self.files[row_index].tag));
                             });
                             row.col(|ui| {
                                 if let Some(t) =
@@ -155,7 +188,6 @@ impl eframe::App for RustyBench {
                                     ui.label("unknown");
                                 }
                             });
-
                             self.toggle_row_selection(row_index, &row.response());
                         });
                     });
@@ -221,7 +253,7 @@ impl eframe::App for RustyBench {
                 if ui
                     .add_sized(
                         [120., 40.],
-                        egui::Button::new("Extract all").fill(Color32::BLUE),
+                        egui::Button::new("Extract all\nto .ogg").fill(Color32::BLUE),
                     )
                     .clicked()
                 {
@@ -389,6 +421,23 @@ impl eframe::App for RustyBench {
                 delete_file(&self.files[self.selection.unwrap()])
                     .unwrap_or_else(|e| self.error = Some(e));
                 self.action = Action::PopulateTable;
+            }
+            Action::ShowFileData => {
+                info!("showing file data");
+                self.action = Action::None;
+                let file = &self.files[self.selection.unwrap()];
+                let _ = rfd::MessageDialog::new()
+                    .set_description(format!(
+                        "File info:\nPath: {}\nTag ID: {}\nAudio ID: {}\nAudio size: {} kbyte\nAudio tracks page addresses: {:?}\nSHA1 hash: {:x?}",
+                        file.path.to_string_lossy(),
+                        self.format_tag_id(&file.tag),
+                        file.audio_id,
+                        file.length / 1024,
+                        file.chapter_pages,
+                        file.hash,
+                    ))
+                    .set_buttons(rfd::MessageButtons::Ok)
+                    .show();
             }
         }
     }
