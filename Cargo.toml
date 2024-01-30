@@ -10,6 +10,8 @@ license = "GPL-2.0-only"
 [dependencies]
 anyhow = "*"
 arrayvec = "0.7.1"
+clap = { version = "*", features = ["derive"] }
+clap-verbosity-flag = "*"
 eframe = "*"
 egui_extras = "*"
 env_logger = "*"
