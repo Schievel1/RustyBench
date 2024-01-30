@@ -19,7 +19,7 @@ fn main() {
     // Run GUI
     let _app: RustyBench = Default::default();
     let options = eframe::NativeOptions {
-        viewport: ViewportBuilder::default().with_inner_size([900.0, 350.0]),
+        viewport: ViewportBuilder::default().with_inner_size([900.0, 550.0]),
         ..Default::default()
     };
     let _ = run_native(
