@@ -53,7 +53,7 @@ pub fn get_tonie_list(custom_url: Option<&str>) -> Result<ToniesRoot> {
         url = custom_url;
     }
     // need to do this C style because it is evaluated at start using lazy_static
-    let client = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(5)).build();
+    let client = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(10)).build();
     if let Err(e) = client {
         log::error!("Failed to get tonie list: {}", e);
         return Err(e.into());
