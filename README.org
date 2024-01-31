@@ -12,4 +12,3 @@ I think the other buttons are pretty self explanatory.
 * Known issues
 - During startup Rustybench fetches the toniesV2.json list from github. If that can not complete in 10s, no info will be displayed for Tonies. Currently there is no other way than restarting the program to try again to get the toniesV2.json
 - play file uses the default audio app that is set for the system. If non is set, nothing will happen.
-- can not build on windows because dependency [[https://github.com/hatzel/libogg-rs/issues/1][libogg-rs]] does not build - if you are on windows just use TeddyBench
