@@ -24,3 +24,7 @@
 :LOGBOOK:
 - State "[ ]"        from              [2024-01-29 Mon 16:21]
 :END:
+* [ ] add possibility to load the tonielist json later
+:LOGBOOK:
+- State "[ ]"        from              [2024-01-31 Wed 16:55]
+:END:
