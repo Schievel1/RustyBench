@@ -11,7 +11,6 @@ use log::{error, info};
 use std::ffi::OsStr;
 use std::path::PathBuf;
 
-use crate::tonielist::find_tonie_with_audio_id;
 use crate::{
     add_audio_file, change_tag_id, check_tag_id_validity, delete_file, extract_all, extract_to_ogg,
     play_file, populate_table, Teddyfile,
@@ -172,8 +171,7 @@ impl eframe::App for RustyBench {
                         body.rows(30.0, self.files.len(), |mut row| {
                             let row_index = row.index();
                             row.set_selected(self.selection == Some(row_index));
-                            // TODO I am not shure if it's a good idea to populate the table here
-                            // This is executed every frame when the mouse is over the table
+                            // column Filename
                             row.col(|ui| {
                                 let mut parent = OsStr::new("");
                                 if let Some(p) = self.files[row_index].path.parent() {
@@ -190,6 +188,7 @@ impl eframe::App for RustyBench {
                                     + &file.to_string_lossy();
                                 ui.label(RichText::new(parent_and_file).monospace());
                             });
+                            // column Tag ID
                             row.col(|ui| {
                                 ui.label(
                                     egui::RichText::new(
@@ -198,10 +197,9 @@ impl eframe::App for RustyBench {
                                     .monospace(),
                                 );
                             });
+                            // column Info
                             row.col(|ui| {
-                                if let Some(t) =
-                                    find_tonie_with_audio_id(self.files[row_index].audio_id)
-                                {
+                                if let Some(t) = self.files[row_index].info.as_ref() {
                                     ui.label(format!(
                                         "{} - {}",
                                         &t.data[0].series.clone().unwrap_or_default(),

@@ -1,6 +1,7 @@
 use anyhow::anyhow;
 use anyhow::Result;
 use log::{error, info};
+use tonielist::Tonie;
 use std::env;
 use std::fs::{self, DirEntry, File};
 use std::io::{BufReader, Read};
@@ -31,8 +32,10 @@ pub struct Teddyfile {
     audio_id: u32,
     chapter_pages: Vec<u32>,
     tag: String,
+    info: Option<&'static Tonie>,
 }
 
+#[allow(clippy::too_many_arguments)]
 impl Teddyfile {
     pub fn new(
         path: PathBuf,
@@ -42,6 +45,7 @@ impl Teddyfile {
         audio_id: u32,
         chapter_pages: Vec<u32>,
         tag: String,
+        info: Option<&'static Tonie>,
     ) -> Self {
         Self {
             path,
@@ -51,6 +55,7 @@ impl Teddyfile {
             audio_id,
             chapter_pages,
             tag,
+            info,
         }
     }
 }
@@ -162,6 +167,7 @@ fn write_table_entry(entry: DirEntry, files: &mut Vec<Teddyfile>) -> Result<()> 
     let mut f = File::open(entry.path())?;
     match Toniefile::parse_header(&mut f) {
         Ok(header) => {
+            let info = tonielist::find_tonie_with_audio_id(header.audio_id);
             files.push(Teddyfile::new(
                 entry.path(),
                 true,
@@ -170,6 +176,7 @@ fn write_table_entry(entry: DirEntry, files: &mut Vec<Teddyfile>) -> Result<()> 
                 header.audio_id,
                 header.track_page_nums,
                 get_tag_id(&entry.path()).unwrap_or("invalid".into()),
+                info,
             ));
         }
         Err(e) => {
@@ -183,6 +190,7 @@ fn write_table_entry(entry: DirEntry, files: &mut Vec<Teddyfile>) -> Result<()> 
                 0,
                 vec![],
                 get_tag_id(&entry.path()).unwrap_or("invalid".into()),
+                None,
             ));
         }
     }
