@@ -97,6 +97,9 @@ jobs:
           curl -sL https://api.github.com/repos/Schievel1/RustyBench/releases/latest | \
           jq -r ".tag_name")" >> $GITHUB_ENV
       - uses: actions/checkout@v2
+      - name: install dependencies 
+        run: |
+          sudo apt-get install librust-atk-dev
 #      - name: Install musl dependencies
 #        run: |
 #          sudo apt-get install musl musl-dev musl-tools clang lld
