@@ -99,7 +99,7 @@ jobs:
       - uses: actions/checkout@v2
       - name: install dependencies 
         run: |
-          sudo apt-get install librust-atk-dev
+          sudo apt-get install librust-atk-dev libgtk-3-dev
 #      - name: Install musl dependencies
 #        run: |
 #          sudo apt-get install musl musl-dev musl-tools clang lld
