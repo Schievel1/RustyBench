@@ -1,6 +1,6 @@
 [package]
 name = "rusty_bench"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Rustybench is a gui tool to manage audio files an the SD-Card of a Toniebox audio player"
 repository = "https://github.com/Schievel1/rustybench"
