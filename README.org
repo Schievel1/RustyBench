@@ -1,1 +1,15 @@
-A platform agnostic implementation of the TeddyBench converter for Toniebox(r) files. 
+A platform agnostic implementation of the [[https://github.com/toniebox-reverse-engineering/teddy][TeddyBench]] converter for Toniebox(r) files.
+
+* Screenshot
+[[file:screenshot.png]]
+
+* Usage
+Select the ~CONTENT~ folder on the Toniebox' sdcard (Or anywhere else an the file system if you made a local copy) using the button ~Choose folder CONTENT~.
+Then the Toniebox Audiofiles are automatically loaded and displayed.
+You can add more files to that CONTENT folder by clicking ~Add audio file~, then select an audio file (mp3 or ogg or several others that the Symphonia crate supports) and provide a Tag ID of an RFID tag you want to couple with that audio file.
+I think the other buttons are pretty self explanatory.
+
+* Known issues
+- During startup Rustybench fetches the toniesV2.json list from github. If that can not complete in 10s, no info will be displayed for Tonies. Currently there is no other way than restarting the program to try again to get the toniesV2.json
+- play file uses the default audio app that is set for the system. If non is set, nothing will happen.
+- can not build on windows because dependency [[https://github.com/hatzel/libogg-rs/issues/1][libogg-rs]] does not build - if you are on windows just use TeddyBench
