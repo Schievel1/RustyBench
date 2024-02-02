@@ -1,4 +1,5 @@
 use anyhow::Error;
+use crossbeam::channel::{Receiver, Sender};
 use eframe::{
     egui::{self, RichText},
     epaint::Color32,
@@ -8,14 +9,15 @@ use egui::FontId;
 use egui::TextStyle::*;
 use egui_extras::{Column, TableBuilder};
 use log::{error, info};
-use std::ffi::OsStr;
 use std::path::PathBuf;
+use std::{ffi::OsStr, thread};
 
 use crate::{
     add_audio_file, change_tag_id, check_tag_id_validity, delete_file, extract_all, extract_to_ogg,
     play_file, populate_table, Teddyfile,
 };
 
+#[derive(Debug, Clone, Copy)]
 pub enum Action {
     None,
     AskAddAudioFile,
@@ -28,6 +30,8 @@ pub enum Action {
     PlayFile,
     DeleteFile,
     ShowFileData,
+    Processing(u64),
+    CurrentFileNo(usize),
 }
 
 pub struct RustyBench {
@@ -41,10 +45,15 @@ pub struct RustyBench {
     pub tag_id_valid: bool,
     pub error: Option<Error>,
     pub action: Action,
+    pub thread_receiver: Receiver<Action>,
+    pub thread_sender: Sender<Action>,
+    pub processed: u64,
+    pub current_fileno: usize,
 }
 
 impl Default for RustyBench {
     fn default() -> Self {
+        let (thread_sender, thread_receiver) = crossbeam::channel::unbounded::<Action>();
         Self {
             picked_path: Default::default(),
             picked_file: Default::default(),
@@ -56,6 +65,10 @@ impl Default for RustyBench {
             tag_id_valid: false,
             error: None,
             action: Action::None,
+            thread_receiver,
+            thread_sender,
+            processed: 0,
+            current_fileno: 0,
         }
     }
 }
@@ -214,6 +227,7 @@ impl eframe::App for RustyBench {
                     });
             });
         });
+
         egui::TopBottomPanel::bottom("Bottom Panel").show(ctx, |ui| {
             ui.set_enabled(!self.show_id_popup);
             ui.horizontal_centered(|ui| {
@@ -292,6 +306,20 @@ impl eframe::App for RustyBench {
                 }
             });
         });
+
+        egui::TopBottomPanel::bottom("Messages Panel").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                if self.processed > 0 {
+                    ui.label(format!(
+                        "File {} / {} ",
+                        self.current_fileno,
+                        self.picked_files.len()
+                    ));
+                    ui.label(format!("processed: {}%", self.processed));
+                }
+            });
+        });
+
         if self.show_id_popup {
             egui::Window::new("Please provide a tag ID")
                 .collapsible(false)
@@ -368,6 +396,8 @@ impl eframe::App for RustyBench {
         }
         // NOTE unwrapping self.selection is ok below here, because the buttons are disabled if
         // self.selection is None
+        let thr = thread::Builder::new().name("action_thread".to_string());
+        let mut jh = None;
         match self.action {
             Action::None => {}
             Action::AskAddAudioFile => {
@@ -383,9 +413,14 @@ impl eframe::App for RustyBench {
                     self.action = Action::None;
                     info!("adding audio file");
                     self.tag_id_valid = false;
-                    add_audio_file(&self.picked_path, &self.picked_files, &self.tag_id)
-                        .unwrap_or_else(|e| self.error = Some(e));
-                    self.action = Action::PopulateTable;
+                    let tag = self.tag_id.clone();
+                    let path = self.picked_path.clone();
+                    let files = self.picked_files.clone();
+                    let add_audio_tx = self.thread_sender.clone();
+                    jh = Some(
+                        thr.spawn(move || add_audio_file(path, files, tag, add_audio_tx))
+                            .unwrap(),
+                    );
                     self.tag_id = "E0040350".to_string();
                 }
             }
@@ -410,6 +445,7 @@ impl eframe::App for RustyBench {
             }
             Action::PopulateTable => {
                 info!("populating table");
+                self.processed = 0;
                 self.action = Action::None;
                 self.selection = None;
                 self.files.clear();
@@ -466,6 +502,31 @@ impl eframe::App for RustyBench {
                     ))
                     .set_buttons(rfd::MessageButtons::Ok)
                     .show();
+            }
+            Action::Processing(_) => {}
+            Action::CurrentFileNo(_) => {}
+        }
+        if let Ok(action) = self.thread_receiver.try_recv() {
+            info!("thread action: {:?}", action);
+            ctx.request_repaint();
+            match action {
+                Action::PopulateTable => {
+                    self.action = Action::PopulateTable;
+                }
+                Action::Processing(p) => {
+                    self.processed = p;
+                }
+                Action::CurrentFileNo(n) => {
+                    self.current_fileno = n;
+                }
+                _ => {}
+            }
+            if let Some(jh) = jh {
+                if let Ok(thread_result) = jh.join() {
+                    if let Err(e) = thread_result {
+                        self.error = Some(e);
+                    }
+                }
             }
         }
     }

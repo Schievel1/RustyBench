@@ -1,7 +1,9 @@
 use anyhow::anyhow;
 use anyhow::Result;
+use crossbeam::channel::Sender;
 use log::{error, info};
 use tonielist::Tonie;
+use ui::Action;
 use std::env;
 use std::fs::{self, DirEntry, File};
 use std::io::{BufReader, Read};
@@ -60,7 +62,7 @@ impl Teddyfile {
     }
 }
 
-fn decode_encode(src: &Path, toniefile: &mut Toniefile<File>) -> Result<()> {
+fn decode_encode(src: &Path, toniefile: &mut Toniefile<File>, write_tx: Sender<Action>) -> Result<()> {
     info!("Encoding input file: {}", src.display());
 
     // if the input file has an extension, use it as a hint for the media format.
@@ -114,7 +116,8 @@ fn decode_encode(src: &Path, toniefile: &mut Toniefile<File>) -> Result<()> {
 
     while let Ok(packet) = format.next_packet() {
         let progress = packet.ts * 100 / tracklen;
-        print!("\rProgress: {}%", progress);
+        info!("\rProgress: {}%", progress);
+        write_tx.send(Action::Processing(progress))?;
         // Consume any new metadata that has been read since the last packet.
         while !format.metadata().is_latest() {
             format.metadata().pop();
@@ -322,7 +325,7 @@ pub fn populate_table(path: &Path, files: &mut Vec<Teddyfile>) -> Result<()> {
     Ok(())
 }
 
-pub fn add_audio_file(dest: &Path, infiles: &[PathBuf], tag: &str) -> Result<()> {
+pub fn add_audio_file(dest: PathBuf, infiles: Vec<PathBuf>, tag: String, write_tx: Sender<Action>) -> Result<()> {
     let (filename, dirname) = tag.split_at(8);
     let (filename, dirname) = (
         filename.to_string().to_ascii_uppercase(),
@@ -336,12 +339,17 @@ pub fn add_audio_file(dest: &Path, infiles: &[PathBuf], tag: &str) -> Result<()>
 
     let mut infiles_iter = infiles.iter();
     let first_path = infiles_iter.next().ok_or(anyhow!("no input files"))?;
-    decode_encode(first_path, &mut toniefile)?;
+    let mut i = 1;
+    write_tx.send(Action::CurrentFileNo(i))?;
+    decode_encode(first_path, &mut toniefile, write_tx.clone())?;
     for file in infiles_iter {
+        i += 1;
+        write_tx.send(Action::CurrentFileNo(i))?;
         toniefile.new_chapter()?;
-        decode_encode(file, &mut toniefile)?;
+        decode_encode(file, &mut toniefile, write_tx.clone())?;
     }
     info!("all files encoded, finalizing...");
     toniefile.finalize()?;
+    write_tx.send(Action::PopulateTable)?;
     Ok(())
 }
