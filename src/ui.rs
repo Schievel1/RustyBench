@@ -361,7 +361,6 @@ impl eframe::App for RustyBench {
                         let text_edit = egui::TextEdit::singleline(&mut self.tag_id)
                             .char_limit(16)
                             .cursor_at_end(true)
-                            .lock_focus(true)
                             .font(FontId::default());
                         let _output = text_edit.show(ui);
                     }
@@ -376,7 +375,9 @@ impl eframe::App for RustyBench {
                                         self.tag_id = "E00403500".to_string();
                                         self.action = Action::None;
                                     }
-                                    if ui.button("Ok").clicked() {
+                                    let ok_button = ui.button("Ok");
+                                    ok_button.request_focus();
+                                    if ok_button.clicked() {
                                         self.show_id_popup = false;
                                         self.tag_id_valid = true;
                                     }
