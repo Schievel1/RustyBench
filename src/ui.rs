@@ -17,7 +17,7 @@ use crate::{
     play_file, populate_table, Teddyfile,
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum Action {
     None,
     AskAddAudioFile,
@@ -32,6 +32,7 @@ pub enum Action {
     ShowFileData,
     Processing(u64),
     CurrentFileNo(usize),
+    CurrentFile(String),
 }
 
 pub struct RustyBench {
@@ -49,6 +50,8 @@ pub struct RustyBench {
     pub thread_sender: Sender<Action>,
     pub processed: u64,
     pub current_fileno: usize,
+    pub current_file: String,
+    pub joinhandles: Vec<thread::JoinHandle<Result<(), Error>>>,
 }
 
 impl Default for RustyBench {
@@ -69,6 +72,8 @@ impl Default for RustyBench {
             thread_sender,
             processed: 0,
             current_fileno: 0,
+            current_file: "".to_string(),
+            joinhandles: vec![],
         }
     }
 }
@@ -317,6 +322,9 @@ impl eframe::App for RustyBench {
                     ));
                     ui.label(format!("processed: {}%", self.processed));
                 }
+                if !self.current_file.is_empty() {
+                    ui.label(format!("Extracting file: {}", self.current_file));
+                }
             });
         });
 
@@ -397,7 +405,7 @@ impl eframe::App for RustyBench {
         // NOTE unwrapping self.selection is ok below here, because the buttons are disabled if
         // self.selection is None
         let thr = thread::Builder::new().name("action_thread".to_string());
-        let mut jh = None;
+        // let mut jh = None;
         match self.action {
             Action::None => {}
             Action::AskAddAudioFile => {
@@ -417,10 +425,10 @@ impl eframe::App for RustyBench {
                     let path = self.picked_path.clone();
                     let files = self.picked_files.clone();
                     let add_audio_tx = self.thread_sender.clone();
-                    jh = Some(
-                        thr.spawn(move || add_audio_file(path, files, tag, add_audio_tx))
-                            .unwrap(),
-                    );
+                    let jh = thr
+                        .spawn(move || add_audio_file(path, files, tag, add_audio_tx))
+                        .unwrap();
+                    self.joinhandles.push(jh);
                     self.tag_id = "E0040350".to_string();
                 }
             }
@@ -456,22 +464,33 @@ impl eframe::App for RustyBench {
                 info!("extracting to ogg");
                 self.action = Action::None;
                 if let Some(path) = rfd::FileDialog::new().set_file_name(".ogg").save_file() {
-                    extract_to_ogg(&self.files[self.selection.unwrap()], &path)
-                        .unwrap_or_else(|e| self.error = Some(e));
+                    let sel = self.files[self.selection.unwrap()].clone();
+                    let add_audio_tx = self.thread_sender.clone();
+                    let jh = thr
+                        .spawn(move || extract_to_ogg(&sel, &path, add_audio_tx))
+                        .unwrap();
+                    self.joinhandles.push(jh);
                 }
             }
             Action::ExtractAll => {
                 info!("extracting all");
                 self.action = Action::None;
                 if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                    extract_all(&self.files, &path).unwrap_or_else(|e| self.error = Some(e));
+                    let files = self.files.clone();
+                    let add_audio_tx = self.thread_sender.clone();
+                    let jh = thr
+                        .spawn(move || extract_all(&files, &path, add_audio_tx))
+                        .unwrap();
+                    self.joinhandles.push(jh);
                 }
             }
             Action::PlayFile => {
                 info!("playing file");
                 self.action = Action::None;
-                play_file(&self.files[self.selection.unwrap()])
-                    .unwrap_or_else(|e| self.error = Some(e));
+                let sel = self.files[self.selection.unwrap()].clone();
+                let add_audio_tx = self.thread_sender.clone();
+                let jh = thr.spawn(move || play_file(&sel, add_audio_tx)).unwrap();
+                self.joinhandles.push(jh);
             }
             Action::DeleteFile => {
                 info!("deleting file");
@@ -505,9 +524,10 @@ impl eframe::App for RustyBench {
             }
             Action::Processing(_) => {}
             Action::CurrentFileNo(_) => {}
+            Action::CurrentFile(_) => {}
         }
         if let Ok(action) = self.thread_receiver.try_recv() {
-            info!("thread action: {:?}", action);
+            info!("recvd thread action: {:?}", action);
             ctx.request_repaint();
             match action {
                 Action::PopulateTable => {
@@ -519,13 +539,18 @@ impl eframe::App for RustyBench {
                 Action::CurrentFileNo(n) => {
                     self.current_fileno = n;
                 }
+                Action::CurrentFile(f) => {
+                    self.current_file = f;
+                }
                 _ => {}
             }
-            if let Some(jh) = jh {
-                if let Ok(thread_result) = jh.join() {
-                    if let Err(e) = thread_result {
-                        self.error = Some(e);
-                    }
+        }
+        // join any finished threads
+        for i in 0..self.joinhandles.len() {
+            if self.joinhandles[i].is_finished() {
+                let jh = self.joinhandles.remove(i);
+                if let Err(e) = jh.join().unwrap() {
+                    self.error = Some(e);
                 }
             }
         }

@@ -26,6 +26,7 @@ pub mod ui;
 pub mod tonielist;
 
 #[allow(dead_code)]
+#[derive(Debug, Clone)]
 pub struct Teddyfile {
     path: PathBuf,
     is_valid: bool,
@@ -245,12 +246,14 @@ fn read_audio_from_file(file: &Teddyfile) -> Result<Vec<u8>> {
     Ok(buf[header_len + 4..].to_vec())
 }
 
-pub fn extract_to_ogg(file: &Teddyfile, dest: &Path) -> Result<()> {
+pub fn extract_to_ogg(file: &Teddyfile, dest: &Path, write_tx: Sender<Action>) -> Result<()> {
     if !file.is_valid {
         error!("file {} has an invalid header", file.path.display());
     }
+    write_tx.send(Action::CurrentFile(file.path.to_string_lossy().to_string()))?;
     let audio = read_audio_from_file(file)?;
     fs::write(dest.join(dest).with_extension("ogg"), audio)?;
+    write_tx.send(Action::CurrentFile("".to_string()))?;
     Ok(())
 }
 
@@ -278,21 +281,21 @@ pub fn delete_file(file: &Teddyfile) -> Result<()> {
     Ok(())
 }
 
-pub fn extract_all(files: &[Teddyfile], path: &Path) -> Result<()> {
+pub fn extract_all(files: &[Teddyfile], path: &Path, write_tx: Sender<Action>) -> Result<()> {
     for file in files {
-        extract_to_ogg(file, &path.join(&file.tag)).unwrap_or_else(|e| {
+        extract_to_ogg(file, &path.join(&file.tag), write_tx.clone()).unwrap_or_else(|e| {
             error!("error extracting file {}: {}", file.path.display(), e);
         });
     }
     Ok(())
 }
 
-pub fn play_file(file: &Teddyfile) -> Result<()> {
+pub fn play_file(file: &Teddyfile, write_tx: Sender<Action>) -> Result<()> {
     let dir = env::temp_dir();
     let path = dir
         .join(file.path.file_name().unwrap_or_default())
         .with_extension("ogg");
-    extract_to_ogg(file, &path)?;
+    extract_to_ogg(file, &path, write_tx)?;
     open::that(path)?;
     Ok(())
 }
