@@ -1,4 +1,5 @@
 use anyhow::Error;
+use anyhow::Result;
 use crossbeam::channel::{Receiver, Sender};
 use eframe::{
     egui::{self, RichText},
@@ -9,12 +10,14 @@ use egui::FontId;
 use egui::TextStyle::*;
 use egui_extras::{Column, TableBuilder};
 use log::{error, info};
-use std::path::PathBuf;
 use std::{ffi::OsStr, thread};
+use std::{path::PathBuf, sync::Arc};
 
+use crate::tonielist::get_tonie_list_from_file;
+use crate::tonielist::get_tonie_list_online;
 use crate::{
     add_audio_file, change_tag_id, check_tag_id_validity, delete_file, extract_all, extract_to_ogg,
-    play_file, populate_table, Teddyfile,
+    play_file, populate_table, tonielist::Tonie, Teddyfile,
 };
 
 #[derive(Debug, Clone)]
@@ -52,11 +55,17 @@ pub struct RustyBench {
     pub current_fileno: usize,
     pub current_file: String,
     pub joinhandles: Vec<thread::JoinHandle<Result<(), Error>>>,
+    pub tonies: Arc<Vec<Tonie>>,
 }
 
 impl Default for RustyBench {
     fn default() -> Self {
         let (thread_sender, thread_receiver) = crossbeam::channel::unbounded::<Action>();
+        let tonies = if let Ok(list) = get_tonie_list_online(None) {
+            Arc::new(list)
+        } else {
+            Arc::new(vec![])
+        };
         Self {
             picked_path: Default::default(),
             picked_file: Default::default(),
@@ -74,6 +83,7 @@ impl Default for RustyBench {
             current_fileno: 0,
             current_file: "".to_string(),
             joinhandles: vec![],
+            tonies,
         }
     }
 }
@@ -148,6 +158,19 @@ impl eframe::App for RustyBench {
                     if ui.button("Choose CONTENT folder...").clicked() {
                         if let Some(path) = rfd::FileDialog::new().pick_folder() {
                             self.picked_path = path;
+                            self.action = Action::PopulateTable;
+                        }
+                    }
+                    if ui.button("Load toniesV2.json file").clicked() {
+                        if let Some(path) = rfd::FileDialog::new().pick_file() {
+                            let tonielist = match get_tonie_list_from_file(path) {
+                                Ok(t) => Arc::new(t),
+                                Err(e) => {
+                                    self.error = Some(e);
+                                    Arc::new(vec![])
+                                }
+                            };
+                            self.tonies = tonielist;
                             self.action = Action::PopulateTable;
                         }
                     }
@@ -457,7 +480,7 @@ impl eframe::App for RustyBench {
                 self.action = Action::None;
                 self.selection = None;
                 self.files.clear();
-                populate_table(&self.picked_path, &mut self.files)
+                populate_table(&self.picked_path, &mut self.files, &self.tonies)
                     .unwrap_or_else(|e| self.error = Some(e));
             }
             Action::ExtractToOgg => {

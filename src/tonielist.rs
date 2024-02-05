@@ -1,8 +1,10 @@
-use anyhow::{Result, Error};
+use std::{path::PathBuf, sync::Arc};
+
+use anyhow::{Error, Result};
 use serde::{Deserialize, Serialize};
 
 lazy_static! {
-    static ref TONIES: Result<Vec<Tonie>, Error> = get_tonie_list(None);
+    static ref TONIES: Arc<Result<Vec<Tonie>, Error>> = Arc::new(Ok(Vec::new()));
 }
 
 pub type ToniesRoot = Vec<Tonie>;
@@ -46,14 +48,16 @@ pub struct Id {
     pub confidence: i64,
 }
 
-pub fn get_tonie_list(custom_url: Option<&str>) -> Result<ToniesRoot> {
+pub fn get_tonie_list_online(custom_url: Option<&str>) -> Result<ToniesRoot> {
     let mut url =
         "https://raw.githubusercontent.com/toniebox-reverse-engineering/tonies-json/release/toniesV2.json";
     if let Some(custom_url) = custom_url {
         url = custom_url;
     }
     // need to do this C style because it is evaluated at start using lazy_static
-    let client = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(10)).build();
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build();
     if let Err(e) = client {
         log::error!("Failed to get tonie list: {}", e);
         return Err(e.into());
@@ -76,14 +80,26 @@ pub fn get_tonie_list(custom_url: Option<&str>) -> Result<ToniesRoot> {
     Ok(tonies.unwrap())
 }
 
-pub fn find_tonie_with_audio_id(audio_id: u32) -> Option<&'static Tonie> {
-    if let Ok(tonies) = TONIES.as_ref() {
-        for tonie in tonies {
-            for daum in &tonie.data {
-                for id in &daum.ids {
-                    if id.audio_id == audio_id as i64 {
-                        return Some(tonie);
-                    }
+pub fn get_tonie_list_from_file(path: PathBuf) -> Result<ToniesRoot> {
+    let tonies = std::fs::read_to_string(path);
+    if let Err(e) = tonies {
+        log::error!("Failed to get tonie list: {}", e);
+        return Err(e.into());
+    }
+    let tonies = serde_json::from_str::<Vec<Tonie>>(&tonies.unwrap());
+    if let Err(e) = tonies {
+        log::error!("Failed to get tonie list: {}", e);
+        return Err(e.into());
+    }
+    Ok(tonies.unwrap())
+}
+
+pub fn find_tonie_with_audio_id(tonielist: &Arc<Vec<Tonie>>, audio_id: u32) -> Option<Tonie> {
+    for tonie in tonielist.as_slice() {
+        for daum in &tonie.data {
+            for id in &daum.ids {
+                if id.audio_id == audio_id as i64 {
+                    return Some(tonie.clone());
                 }
             }
         }

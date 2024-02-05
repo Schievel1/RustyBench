@@ -2,12 +2,11 @@ use anyhow::anyhow;
 use anyhow::Result;
 use crossbeam::channel::Sender;
 use log::{error, info};
-use tonielist::Tonie;
-use ui::Action;
 use std::env;
 use std::fs::{self, DirEntry, File};
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::FormatOptions;
@@ -15,6 +14,8 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use toniefile::Toniefile;
+use tonielist::Tonie;
+use ui::Action;
 
 #[macro_use]
 extern crate lazy_static;
@@ -22,8 +23,8 @@ extern crate lazy_static;
 use crate::resampler::Resampler;
 
 pub mod resampler;
-pub mod ui;
 pub mod tonielist;
+pub mod ui;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
@@ -35,7 +36,7 @@ pub struct Teddyfile {
     audio_id: u32,
     chapter_pages: Vec<u32>,
     tag: String,
-    info: Option<&'static Tonie>,
+    info: Option<Tonie>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -48,7 +49,7 @@ impl Teddyfile {
         audio_id: u32,
         chapter_pages: Vec<u32>,
         tag: String,
-        info: Option<&'static Tonie>,
+        info: Option<Tonie>,
     ) -> Self {
         Self {
             path,
@@ -63,7 +64,11 @@ impl Teddyfile {
     }
 }
 
-fn decode_encode(src: &Path, toniefile: &mut Toniefile<File>, write_tx: Sender<Action>) -> Result<()> {
+fn decode_encode(
+    src: &Path,
+    toniefile: &mut Toniefile<File>,
+    write_tx: Sender<Action>,
+) -> Result<()> {
     info!("Encoding input file: {}", src.display());
 
     // if the input file has an extension, use it as a hint for the media format.
@@ -167,11 +172,15 @@ fn decode_encode(src: &Path, toniefile: &mut Toniefile<File>, write_tx: Sender<A
     Ok(())
 }
 
-fn write_table_entry(entry: DirEntry, files: &mut Vec<Teddyfile>) -> Result<()> {
+fn write_table_entry(
+    entry: DirEntry,
+    files: &mut Vec<Teddyfile>,
+    tonielist: &Arc<Vec<Tonie>>,
+) -> Result<()> {
     let mut f = File::open(entry.path())?;
     match Toniefile::parse_header(&mut f) {
         Ok(header) => {
-            let info = tonielist::find_tonie_with_audio_id(header.audio_id);
+            let info = tonielist::find_tonie_with_audio_id(&tonielist, header.audio_id);
             files.push(Teddyfile::new(
                 entry.path(),
                 true,
@@ -311,14 +320,18 @@ pub fn check_tag_id_validity(tag_id: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn populate_table(path: &Path, files: &mut Vec<Teddyfile>) -> Result<()> {
+pub fn populate_table(
+    path: &Path,
+    files: &mut Vec<Teddyfile>,
+    tonielist: &Arc<Vec<Tonie>>,
+) -> Result<()> {
     for entry in path.read_dir()?.flatten() {
         if entry.path().is_dir() {
             if let Some(filename) = entry.path().file_name() {
                 if !filename.to_string_lossy().starts_with("000000") {
                     for entry in entry.path().read_dir()?.flatten() {
                         if entry.path().is_file() {
-                            write_table_entry(entry, files)?;
+                            write_table_entry(entry, files, &tonielist)?;
                         }
                     }
                 }
@@ -328,7 +341,12 @@ pub fn populate_table(path: &Path, files: &mut Vec<Teddyfile>) -> Result<()> {
     Ok(())
 }
 
-pub fn add_audio_file(dest: PathBuf, infiles: Vec<PathBuf>, tag: String, write_tx: Sender<Action>) -> Result<()> {
+pub fn add_audio_file(
+    dest: PathBuf,
+    infiles: Vec<PathBuf>,
+    tag: String,
+    write_tx: Sender<Action>,
+) -> Result<()> {
     let (filename, dirname) = tag.split_at(8);
     let (filename, dirname) = (
         filename.to_string().to_ascii_uppercase(),

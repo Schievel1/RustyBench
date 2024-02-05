@@ -1,6 +1,6 @@
+use clap::Parser;
 use eframe::{egui::ViewportBuilder, run_native};
 use rusty_bench::ui::RustyBench;
-use clap::Parser;
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -13,8 +13,8 @@ fn main() {
     let cli = Cli::parse();
     // Initialize logging.
     env_logger::Builder::new()
-    .filter_level(cli.verbose.log_level_filter())
-    .init();
+        .filter_level(cli.verbose.log_level_filter())
+        .init();
 
     // Run GUI
     let _app: RustyBench = Default::default();
