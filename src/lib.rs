@@ -21,7 +21,9 @@ use ui::Action;
 extern crate lazy_static;
 
 use crate::resampler::Resampler;
+use crate::buffered_source::BufferedSource;
 
+pub mod buffered_source;
 pub mod resampler;
 pub mod tonielist;
 pub mod ui;
@@ -70,7 +72,7 @@ fn decode_encode(
     write_tx: Sender<Action>,
 ) -> Result<()> {
     info!("Encoding input file: {}", src.display());
-
+    let start_time = std::time::Instant::now();
     // if the input file has an extension, use it as a hint for the media format.
     let mut hint = Hint::new();
     if let Some(ext) = src.extension() {
@@ -81,8 +83,9 @@ fn decode_encode(
 
     let src = std::fs::File::open(src)?;
 
+    let bufsrc = Box::new(BufferedSource::new(src, 1024 * 1024 * 64));
     // Create the media source stream.
-    let mss = MediaSourceStream::new(Box::new(src), Default::default());
+    let mss = MediaSourceStream::new(bufsrc, Default::default());
 
     let meta_opts: MetadataOptions = Default::default();
     let fmt_opts: FormatOptions = Default::default();
@@ -96,7 +99,7 @@ fn decode_encode(
         .tracks()
         .iter()
         .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
-        .ok_or(anyhow::anyhow!("No supported audio track found"))?;
+        .ok_or(anyhow::anyhow!("No supported audio track found (audio format is not supported by symphonia library)"))?;
 
     // Create a decoder for the track.
     let dec_opts: DecoderOptions = Default::default();
@@ -120,10 +123,15 @@ fn decode_encode(
 
     info!("Track length: {} frames", tracklen);
 
+    let mut progress = 0;
     while let Ok(packet) = format.next_packet() {
-        let progress = packet.ts * 100 / tracklen;
-        info!("\rProgress: {}%", progress);
-        write_tx.send(Action::Processing(progress))?;
+        let newprogress = packet.ts * 100 / tracklen;
+        if packet.ts * 100 / tracklen != progress {
+            progress = newprogress;
+            info!("Progress: {}%", progress);
+            write_tx.send(Action::Processing(progress))?;
+        }
+
         // Consume any new metadata that has been read since the last packet.
         while !format.metadata().is_latest() {
             format.metadata().pop();
@@ -142,11 +150,11 @@ fn decode_encode(
                     resampler = Some(Resampler::new(
                         *decoded.spec(),
                         48000,
-                        decoded.capacity() as u64 / 2,
+                        decoded.capacity() as u64 // / 2,
                     ));
                 }
                 if let Some(res) = resampler.as_mut() {
-                    if let Some(resampled) = res.resample(decoded.clone()) {
+                    if let Some(resampled) = res.resample(decoded) {
                         toniefile.encode(resampled)?;
                     }
                 }
@@ -167,8 +175,9 @@ fn decode_encode(
             }
         }
     }
-    info!("\rProgress: 100%");
+    info!("Progress: 100%");
     info!("File done");
+    info!("Time to decode: {} seconds", std::time::Instant::now().duration_since(start_time).as_secs());
     Ok(())
 }
 

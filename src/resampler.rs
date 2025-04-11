@@ -79,7 +79,8 @@ where
 
         let output = rubato::Resampler::output_buffer_allocate(&resampler);
 
-        let input = vec![Vec::with_capacity(duration); num_channels];
+        // let input = vec![Vec::with_capacity(duration); num_channels];
+        let input = rubato::Resampler::input_buffer_allocate(&resampler);
 
         Self {
             resampler,

@@ -30,3 +30,6 @@ toniefile = "0.1.1"
 
 [build-dependencies]
 prost-build = { version = "0.6" }
+
+[profile.dev]
+opt-level = 1
